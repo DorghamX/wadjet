@@ -112,3 +112,47 @@ Format: date, task, decision, reason.
   and the KB's CWE wins over the scanner's when the KB has one.
 - **T2.3 — PyYAML became a server dependency** (guide's KB files are YAML), with
   `types-PyYAML` in the server dev extra for mypy.
+- **T2.4 — The ingest endpoint reads the raw body itself.** It must enforce the
+  20 MB cap and `Content-Encoding` (gzip) policy *before* any JSON parsing, so the
+  route is `async`, reads `await request.body()`, and runs the blocking DB work in
+  a threadpool (`run_in_threadpool`) - the rest of the app stays sync per the guide.
+  Unsupported encodings get 415, oversized or gzip-bomb payloads 413, bad JSON 422.
+- **T2.4 — Auth dependencies moved to `server/app/deps.py`.** `get_current_user`
+  and `require_project_token` were closures inside `create_app`; routers cannot
+  import closures. They are now module-level, read the engine from `app.state`,
+  and are still re-exposed as `application.state.require_project_token` so existing
+  tests keep working.
+- **T2.4 — Exclusion globs are a documented approximation of gitignore.** A plain
+  name (`.venv/`, `build/`) matches that path segment at any depth; patterns with
+  wildcards or slashes match the whole relative path with `fnmatch`, whose `*`
+  crosses `/` (gitignore-like for simple patterns). A project's stored
+  `scope.exclude` replaces the defaults; absent settings fall back to the editable
+  default list. Dependency findings (no path) are never excluded.
+- **T2.4 — JSONB parameters are serialized with `json.dumps` (with `default=str`),
+  the same convention as `audit.py`.** psycopg3 does not adapt Python dicts/lists
+  through SQLAlchemy `text()` placeholders; the tests caught this immediately.
+- **T2.4 — Gate evaluation landed here, not in T2.5.** The frozen `AnalysisResult`
+  contract requires a gate verdict at upload time, so ingest computes the
+  project-scoped issue metrics, evaluates the project's conditions and stores
+  `gate_status`/`gate_details`/`metrics` in the same transaction. T2.5 then adds the
+  built-in default gate, gate selection and the section-9 matrix.
+- **T2.4 — Metrics are scoped to the uploading project** (`WHERE project_id = :pid`).
+  The first version counted globally and the gate tests caught it: a quality gate
+  must never see another project's issues.
+- **T2.4 — Analysis status is derived, not sent:** `complete` only when every entry
+  in `scanner_runs` is a dict with `status == "ok"`; an empty dict is `complete`.
+  An incomplete analysis resolves nothing (section 5.4) and fails the gate with a
+  synthetic `all_scanners_completed` condition - T3.5 refines this behind
+  `fail_on_scanner_error`.
+- **T2.4 — Coverage flows from the agent's uploaded metrics** into
+  `coverage_line_percent`; stored analysis metrics are the merge of uploaded and
+  computed (computed wins on collision). A gate condition naming a metric the
+  analysis does not produce shows `actual: null` and does not trigger; an unknown
+  *operator* fails closed.
+- **T2.4 — Duplicate findings inside one upload are deduped by fingerprint**
+  before lifecycle planning (matching only pairs against pre-existing issues, so a
+  doubled dependency row would otherwise hit the `(project_id, fingerprint)`
+  uniqueness).
+- **T2.4 — No audit row for ingest.** The guide's audit list does not include
+  uploads, and `write_audit` opens its own connection - committing it early would
+  break the one-transaction guarantee the endpoint exists to provide.

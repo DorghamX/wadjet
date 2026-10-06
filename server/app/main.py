@@ -7,14 +7,11 @@ from typing import Any
 from argon2 import PasswordHasher
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
-from fastapi.security import (
-    HTTPAuthorizationCredentials,
-    HTTPBearer,
-    OAuth2PasswordRequestForm,
-)
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import text
 from starlette.middleware.sessions import SessionMiddleware
 
+from app.api.analyses import router as analyses_router
 from app.audit import write_audit
 from app.config import Settings, load_settings
 from app.csrf import CsrfMiddleware
@@ -24,18 +21,16 @@ from app.db import (
     ping_database,
     revoke_session,
 )
+from app.deps import get_current_user, require_project_token
 from app.logging_setup import configure_logging
 from app.ratelimit import rate_limiter
 from app.security import hash_password, verify_password
 from app.session import create_session
 from app.session import get_session as get_db_session
-from app.tokens import update_last_used, validate_token
 
 SECRET_KEY = "<<<CHANGE_ME>>>"
 
 password_hasher = PasswordHasher()
-
-token_bearer = HTTPBearer(auto_error=False)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -68,45 +63,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     application.add_middleware(CsrfMiddleware, secure=resolved.cookie_secure)
 
-    # --- Auth dependencies ---
-
-    def get_current_user(
-        request: Request,
-        credentials: HTTPAuthorizationCredentials | None = Depends(token_bearer),
-    ) -> dict[str, Any]:
-        """FastAPI dependency: resolve the current user.
-
-        Auth: session cookie for the UI (section 15), with a Bearer session
-        token accepted as a fallback for API clients.
-        """
-        token = credentials.credentials if credentials is not None else None
-        if not token:
-            token = request.cookies.get("wadjet_session")
-        if not token:
-            raise HTTPException(status_code=401, detail="Authentication required")
-        session = get_db_session(application.state.engine, token)
-        if not session or not session.get("user_id"):
-            raise HTTPException(status_code=401, detail="Authentication required")
-        return {"user_id": session["user_id"], "session_token": token}
-
-    def require_project_token(
-        credentials: HTTPAuthorizationCredentials | None = Depends(token_bearer),
-    ) -> dict[str, Any]:
-        """FastAPI dependency for agent endpoints (section 13).
-
-        Authenticates a Bearer project token: 32 random bytes, stored as a
-        SHA-256 hash, constant-time compared, refreshes ``last_used_at`` and
-        returns the token's data so a route can bind it to its own project.
-        """
-        if credentials is None:
-            raise HTTPException(status_code=401, detail="Project token required")
-        token_data = validate_token(application.state.engine, credentials.credentials)
-        if token_data is None:
-            raise HTTPException(status_code=401, detail="Invalid, expired or revoked token")
-        update_last_used(application.state.engine, token_data["id"])
-        return token_data
-
+    # --- Auth dependencies (shared module; exposed on state for routes) ---
+    application.state.get_current_user = get_current_user
     application.state.require_project_token = require_project_token
+
+    # --- Agent API (section 15.2) ---
+    application.include_router(analyses_router)
 
     @application.post("/session", status_code=201)
     def login(

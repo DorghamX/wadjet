@@ -67,5 +67,7 @@ def test_agent_endpoints_are_exempt(app: FastAPI) -> None:
     with TestClient(app) as client:
         client.get("/healthz")
         response = client.post("/api/v1/analyses", json={})
-    # Exempt from CSRF: the request falls through to routing (404, not 403).
-    assert response.status_code == 404
+    # Exempt from CSRF: the request reaches the route and is refused for
+    # authentication (401), not for a missing CSRF token (403).
+    assert response.status_code == 401
+    assert "CSRF" not in response.json()["detail"]

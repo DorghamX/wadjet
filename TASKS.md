@@ -19,7 +19,7 @@ code, tests and one docs line exist, `make lint test` is green and the commit me
 ## Phase 2: Analysis pipeline (the core)
 - [x] **T2.1 (S)** Models and migrations for analyses, issues, events, comments, requests
 - [x] **T2.2 (L)** Fingerprint, matching and lifecycle as pure functions + unit tests
-- [ ] **T2.3 (M)** Knowledge base loader, full Bandit KB + completeness test, pip-audit enrichment
+- [x] **T2.3 (M)** Knowledge base loader, full Bandit KB + completeness test, pip-audit enrichment
 - [ ] **T2.4 (M)** `POST /api/v1/analyses` one-transaction ingest
 - [ ] **T2.5 (M)** Gate engine, built-in default gate, stored results
 - [ ] **T2.6 (L)** Agent: CLI, config fetch, Bandit and pip-audit adapters, upload, exit codes, doctor, --dry-run
