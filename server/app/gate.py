@@ -34,6 +34,12 @@ ISSUE_METRICS = (
     "code_smells",
 )
 
+#: Every metric a condition may name (section 9); coverage comes from the upload.
+ALL_METRICS = ISSUE_METRICS + ("coverage_line_percent",)
+
+#: The operators section 9 accepts.
+OPERATORS = (">", ">=", "<", "<=", "==")
+
 METRIC_SQL = """
 SELECT
     COUNT(*)::int AS issues_total,
@@ -111,12 +117,19 @@ def evaluate_conditions(
 
 
 def load_gate_conditions(conn: Connection, project_id: int) -> list[dict[str, Any]]:
-    """The conditions of the gate the project uses (section 9: exactly one)."""
+    """The conditions of the gate the project uses (section 9: exactly one).
+
+    A project that has never chosen a gate falls back to the built-in
+    default (migration 0008), so every analysis is judged by something.
+    """
     rows = conn.execute(
         text(
             "SELECT gc.metric, gc.operator, gc.threshold "
             "FROM gate_conditions gc "
-            "JOIN projects p ON p.gate_id = gc.gate_id "
+            "JOIN projects p ON gc.gate_id = COALESCE("
+            "    p.gate_id,"
+            "    (SELECT id FROM quality_gates WHERE is_default ORDER BY id LIMIT 1)"
+            ") "
             "WHERE p.id = :pid "
             "ORDER BY gc.id"
         ),

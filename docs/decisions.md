@@ -156,3 +156,26 @@ Format: date, task, decision, reason.
 - **T2.4 — No audit row for ingest.** The guide's audit list does not include
   uploads, and `write_audit` opens its own connection - committing it early would
   break the one-transaction guarantee the endpoint exists to provide.
+- **T2.5 — Migration `0008_seed_default_gate` freezes the six section-9 conditions
+  in the migration itself** (Wadjet default: blocker, critical, high, secrets,
+  dependency_vulns_with_fix, coverage < 70). A migration must never change
+  behaviour when application code evolves, so it does not import `app.gate`;
+  `test_gates.py` freezes the same list and fails if either side drifts.
+- **T2.5 — A project with no gate falls back to the default gate** with
+  `COALESCE(p.gate_id, (SELECT id FROM quality_gates WHERE is_default ...))` in
+  `load_gate_conditions`: every analysis is judged by something. A project that
+  picked a gate is never fallback'd, even if that gate has zero conditions.
+- **T2.5 — The gate engine itself landed with T2.4**, because the frozen
+  `AnalysisResult` contract needs a verdict at upload time; T2.5 completes the
+  story: built-in default, fallback, CRUD API and the section-9 matrix tests
+  (all five operators, metric vocabulary, triage exclusions).
+- **T2.5 — `is_default` and `is_builtin` are never API-writable.** They belong to
+  the migration; the API only creates plain gates. The built-in gate is editable
+  (name/conditions, section 9) but DELETE refuses it with 403, and a gate still
+  referenced by projects is refused with 409 ("select another gate first") rather
+  than silently reassigning projects.
+- **T2.5 — Gate CRUD lives in `server/app/api/gates.py`:** GET needs any session;
+  POST/PATCH/DELETE need `gates.admin` (global, admin-only via `can()`); duplicate
+  names are 409; unknown metric/operator are 422 from pydantic validators that
+  share `ALL_METRICS`/`OPERATORS` with the engine; every change writes a
+  `gate.create`/`gate.update`/`gate.delete` audit entry (section 15.4).
