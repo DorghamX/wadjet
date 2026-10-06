@@ -1,5 +1,6 @@
 """wadjet_schema - Shared contract between the Wadjet server and the Wadjet agent."""
 
+from .exclusions import DEFAULT_EXCLUSION_GLOBS, filter_findings, path_is_excluded
 from .models import (
     FINGERPRINT_CODE,
     FINGERPRINT_DEP,
@@ -18,6 +19,9 @@ __all__ = [
     "AnalysisUpload",
     "AnalysisResult",
     "AgentConfig",
+    "DEFAULT_EXCLUSION_GLOBS",
+    "filter_findings",
+    "path_is_excluded",
     "FINGERPRINT_CODE",
     "FINGERPRINT_DEP",
 ]

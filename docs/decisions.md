@@ -179,3 +179,47 @@ Format: date, task, decision, reason.
   names are 409; unknown metric/operator are 422 from pydantic validators that
   share `ALL_METRICS`/`OPERATORS` with the engine; every change writes a
   `gate.create`/`gate.update`/`gate.delete` audit entry (section 15.4).
+- **T2.6 — Exclusion matching moved into `wadjet_schema.exclusions`.** The agent
+  post-filters and the server drops, so the logic lives once in the shared
+  contract package (`DEFAULT_EXCLUSION_GLOBS`, `path_is_excluded`,
+  `filter_findings`); `app.exclusions` keeps only the server-side
+  `effective_exclusion_globs`. This is the "never duplicate logic" principle
+  applied to a second consumer.
+- **T2.6 — `GET /api/v1/agent/config` returns `gate_conditions` as
+  `{"conditions": [...]}`**, mirroring `gate_details` in `AnalysisResult` (the
+  frozen contract types the field as a dict). The default-gate fallback
+  (migration 0008) travels with every config fetch, settings come back raw
+  until T3.4's schema validates them, and the T1.3 stub route in `test_tokens`
+  is deleted now that the real endpoint exists.
+- **T2.6 — A parseable JSON body means "scanner ok", regardless of exit code.**
+  Bandit exits 1 when it finds issues and pip-audit exits 1 when it finds
+  vulnerabilities, and the codes differ across versions; both verified against
+  the recorded fixtures. Unparseable/empty output becomes `status=error`, which
+  makes the analysis incomplete (exit 3) even though the upload still happens.
+- **T2.6 — Fixtures are real recordings:** `fixtures/bandit/1.9.4/` from
+  bandit 1.9.4 run over the committed sample (relative filenames, so the
+  fixture is portable and snippets rebuild from the sample source) and
+  `fixtures/pip-audit/2.10.1/` from pip-audit 2.10.1 auditing
+  `requests==2.19.0`. Bandit's JSON has no `line_end`; the adapter derives it
+  from `line_range[-1]`. Modern pip-audit wraps findings in `{"dependencies":
+  ...}`; `run` unwraps it and still accepts the older bare-list shape.
+- **T2.6 — The agent builds snippets with exactly `min(3, line_start - 1)`
+  lines above the flagged region** - the same formula the server's
+  `split_snippet` uses to re-derive the split. The first version used the wrong
+  start index; the contract test caught it before anything was uploaded.
+- **T2.6 — Exit-code precedence: incomplete beats the gate verdict.** Any
+  scanner run with `status=error` returns 3 even if the gate passed; config,
+  auth and network failures (including a rejected upload, e.g. 413) return 2;
+  otherwise 0/1 from `gate_status`. `wadjet doctor` returns 2 on config error,
+  1 on a missing/unsupported tool, 0 otherwise - the guide does not define
+  doctor's codes, so the scan codes were reused by severity.
+- **T2.6 — `scan --dry-run` prints the plan only** (project, include paths,
+  exclusions, gate conditions, per-tool status) without running scanners or
+  uploading, matching the guide's "prints what would run". The dashboard link
+  is composed agent-side (`{url}/projects/{key}`) because the frozen
+  `AnalysisResult` carries no URL. `WADJET_PYTHON` overrides the interpreter
+  `python -m pip_audit` runs under (default `sys.executable`).
+- **T2.6 — `agent/fixtures` is excluded from ruff:** the recorded sample is
+  deliberately vulnerable (and would be "fixed" by RET504), and the agent test
+  file `test_cli.py` was renamed `test_agent_cli.py` to avoid a pytest module
+  name collision with `server/tests/test_cli.py` (no `__init__.py` packages).

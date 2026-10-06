@@ -11,6 +11,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import text
 from starlette.middleware.sessions import SessionMiddleware
 
+from app.api.agent import router as agent_router
 from app.api.analyses import router as analyses_router
 from app.api.gates import router as gates_router
 from app.audit import write_audit
@@ -69,6 +70,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.state.require_project_token = require_project_token
 
     # --- Agent API (section 15.2) ---
+    application.include_router(agent_router)
     application.include_router(analyses_router)
     application.include_router(gates_router)
 

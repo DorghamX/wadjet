@@ -135,19 +135,8 @@ def test_list_tokens_is_scoped_to_project(
     assert "other-secret" not in mine_keys
 
 
-def _app_with_agent_route(app: FastAPI) -> FastAPI:
-    """Register a sample agent route guarded by the token dependency."""
-
-    @app.get("/api/v1/agent/config")
-    def agent_config(token: dict = Depends(app.state.require_project_token)) -> dict:  # type: ignore[assignment]
-        return {"project_id": token["project_id"]}
-
-    return app
-
-
 def test_agent_route_requires_token(app: FastAPI) -> None:
     """No Authorization header means 401."""
-    _app_with_agent_route(app)
     with TestClient(app) as client:
         response = client.get("/api/v1/agent/config")
     assert response.status_code == 401
@@ -155,7 +144,6 @@ def test_agent_route_requires_token(app: FastAPI) -> None:
 
 def test_agent_route_rejects_bad_token(app: FastAPI) -> None:
     """An unknown Bearer token means 401."""
-    _app_with_agent_route(app)
     with TestClient(app) as client:
         response = client.get(
             "/api/v1/agent/config",
@@ -168,7 +156,6 @@ def test_agent_route_accepts_valid_token_and_touches_last_used(
     app: FastAPI, engine: Engine, project_id: int, admin_user_id: int
 ) -> None:
     """A valid token authenticates and refreshes last_used_at."""
-    _app_with_agent_route(app)
     full_token, token_id = create_token(engine, project_id, "agent", created_by=admin_user_id)
     with TestClient(app) as client:
         response = client.get(
@@ -176,7 +163,9 @@ def test_agent_route_accepts_valid_token_and_touches_last_used(
             headers={"Authorization": f"Bearer {full_token}"},
         )
     assert response.status_code == 200
-    assert response.json() == {"project_id": project_id}
+    body = response.json()
+    assert set(body) == {"project_key", "settings", "gate_conditions", "exclusion_globs"}
+    assert body["settings"] == {}
     with engine.begin() as conn:
         last_used = conn.execute(
             text("SELECT last_used_at FROM api_tokens WHERE id = :tid"),

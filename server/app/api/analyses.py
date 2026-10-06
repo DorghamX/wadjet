@@ -20,12 +20,12 @@ from sqlalchemy import Connection, Engine, text
 from starlette.concurrency import run_in_threadpool
 
 from app.deps import require_project_token
-from app.exclusions import effective_exclusion_globs, filter_findings
+from app.exclusions import effective_exclusion_globs
 from app.fingerprint import ComputedFinding, compute_fingerprints
 from app.gate import evaluate_gate
 from app.kb import enrich_finding
 from app.lifecycle import Event, ExistingIssue, LifecyclePlan, plan_lifecycle
-from wadjet_schema import AnalysisResult, AnalysisUpload
+from wadjet_schema import AnalysisResult, AnalysisUpload, filter_findings
 
 #: Payload cap for uploads, compressed or not (section 11: 20 MB).
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
