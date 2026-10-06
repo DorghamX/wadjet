@@ -293,3 +293,40 @@ Format: date, task, decision, reason.
   `reason: "no coverage report"` condition, while the clean project (exit-0
   scenario) writes a `coverage.json` at 100% and the stored analysis must
   contain the overall and per-file metrics.
+- **T3.2 - Ruff severity/classification:** the defect families (`F`, `B`,
+  `PLE`, plus the `E9` syntax errors) map to `bug` at medium; every other
+  family maps to `code_smell` at low - nothing from Ruff ever exceeds
+  medium (section 6). The family is the leading non-digit letters of the
+  code (`PLE1307` -> `PLE`), so unknown/future families fall safely into
+  the smell bucket. This is what the `bugs`/`code_smells` gate metrics
+  count.
+- **T3.2 - Rule explanations are fetched in `run()`, not `normalize()`**:
+  one `ruff rule <CODE> --output-format json` per unique code (not per
+  finding), stored in `RawOutput.data["explanations"]` and attached as
+  `raw.explanation`. This keeps `normalize()` pure, so the contract fixture
+  stays a recording of the real tool; a failed fetch never fails the run -
+  the server then describes the finding with the scanner's message
+  (`_ruff_enrichment` already falls back). The fetches count toward the
+  duration stored in `scanner_runs`.
+- **T3.2 - `S` is filtered out even when configured** (Bandit owns security;
+  enabling both would double-report), and an empty/`S`-only selection falls
+  back to the section 6 defaults rather than running Ruff with nothing
+  selected. `scanners.ruff.families` accepts a list or a comma string;
+  T3.4 formalises the settings schema.
+- **T3.2 - `_relative` moved to `adapters/base.py` as `relative_path`**,
+  shared by the Bandit and Ruff adapters: server-side fingerprints are
+  computed from `file_path`, so two adapters must never disagree about
+  what a path means.
+- **T3.2 - Fixture:** `fixtures/ruff/0.16.10/` holds the check output
+  (8 diagnostics over 5 codes) plus the five `ruff rule` payloads; the
+  committed `sample/messy.py` deliberately triggers all four default
+  families (F401/F841, B006, C901, PLE1307). Absolute filenames were
+  rewritten to relative (`messy.py`) after recording so the fixture is
+  machine-independent; the README documents the exact commands. Ruff's
+  issue title carries the code (`F401: ...`) because, unlike Bandit, the
+  KB does not replace it.
+- **T3.2 - The e2e keeps Ruff disabled** (settings): the frozen
+  `expected_findings.json` covers Bandit and pip-audit only, and Ruff's
+  rule set drifts between releases - the adapter's contract tests cover
+  it. The baseline severity loop now iterates the expected entries
+  instead of the stored issues, so extra tools can never break it.

@@ -141,6 +141,10 @@ def set_settings(
     settings = {
         "scanners": {
             "bandit": {"enabled": True},
+            # The sample's frozen expectations cover Bandit and pip-audit
+            # only; Ruff's rule set drifts between releases, so the e2e keeps
+            # it out (the adapter's contract tests cover it).
+            "ruff": {"enabled": False},
             "pip_audit": {
                 "enabled": pip_audit,
                 "dependency_files": dependency_files or [],
@@ -402,11 +406,13 @@ def main() -> int:
         expected_severity = {
             (e["rule_id"], e["file_path"]): e["severity"] for e in expected["bandit"]
         }
-        for issue in issues:
-            key = (issue["rule_id"], issue["file_path"])
+        by_key = {(i["rule_id"], i["file_path"]): i for i in issues}
+        for key, severity in expected_severity.items():
+            issue = by_key.get(key)
+            require(issue is not None, f"expected issue {key} is missing", output)
             require(
-                issue["severity"] == expected_severity[key],
-                f"severity of {key}: expected {expected_severity[key]}, got {issue['severity']}",
+                issue["severity"] == severity,
+                f"severity of {key}: expected {severity}, got {issue['severity']}",
                 output,
             )
             require(

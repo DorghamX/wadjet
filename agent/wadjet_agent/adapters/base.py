@@ -122,6 +122,21 @@ def probe(distribution: str, minimum: str, maximum: str) -> AdapterInfo:
     return AdapterInfo(installed=True, version=version, supported=supported, detail=detail)
 
 
+def relative_path(filename: str, ctx: RunContext) -> str:
+    """A scanner's filename as the server wants it: repo-relative.
+
+    Shared by every adapter so Bandit, Ruff and friends never disagree on
+    what ``app.py`` means (fingerprints are computed from this path).
+    """
+    path = filename.removeprefix("./")
+    if not path.startswith("/"):
+        return path
+    try:
+        return str(Path(path).resolve().relative_to(ctx.repo_root.resolve()))
+    except ValueError:
+        return path.lstrip("/")
+
+
 def local_executable(name: str) -> str | None:
     """Where a bare command name resolves next to the running interpreter.
 

@@ -660,6 +660,35 @@ def test_triaged_issues_leave_the_metrics(
     assert body["gate_details"]["conditions"][0]["actual"] == 0.0
 
 
+def test_ruff_description_comes_from_the_uploaded_explanation(
+    client: TestClient,
+    engine: Engine,
+    ingest_project: tuple[int, str],
+    project_token: str,
+) -> None:
+    """Section 6: the agent uploads ``raw.explanation``; the server prints it,
+    with impact/fix from the family fallback in ``ruff.yml``."""
+    project_id, key = ingest_project
+    finding = make_finding(
+        tool="ruff",
+        rule_id="F401",
+        severity="medium",
+        category="bug",
+        message="`os` imported but unused",
+        file_path="src/app.py",
+        line_start=1,
+        line_end=1,
+        raw={"code": "F401", "explanation": "## What it does\nChecks for unused imports."},
+    )
+    response = upload(client, project_token, make_upload(key, [finding]))
+    assert response.status_code == 201
+
+    issues = fetch_issues(engine, project_id)
+    assert issues[0]["description"] == "## What it does\nChecks for unused imports."
+    assert issues[0]["impact"]  # F-family impact text
+    assert "ruff check --fix" in issues[0]["fix"]
+
+
 # --- status derivation (pure) ------------------------------------------------
 
 

@@ -10,12 +10,19 @@ from __future__ import annotations
 import json
 import subprocess
 import time
-from pathlib import Path
 from typing import Any
 
 from wadjet_schema import Category, Finding, Severity
 
-from .base import AdapterInfo, RawOutput, RunContext, build_snippet, probe, run_command
+from .base import (
+    AdapterInfo,
+    RawOutput,
+    RunContext,
+    build_snippet,
+    probe,
+    relative_path,
+    run_command,
+)
 
 #: Supported range, pinned in SUPPORTED.md.
 MINIMUM, MAXIMUM = "1.7.8", "2"
@@ -30,16 +37,6 @@ def _map_severity(severity: str, confidence: str) -> Severity:
     if level == "MEDIUM":
         return Severity.medium
     return Severity.low
-
-
-def _relative(filename: str, ctx: RunContext) -> str:
-    path = filename.removeprefix("./")
-    if not path.startswith("/"):
-        return path
-    try:
-        return str(Path(path).resolve().relative_to(ctx.repo_root.resolve()))
-    except ValueError:
-        return path.lstrip("/")
 
 
 def _cwe(entry: dict[str, Any]) -> str | None:
@@ -105,7 +102,7 @@ class BanditAdapter:
             line_range = entry.get("line_range") or []
             line_start = int(entry.get("line_number") or 0)
             line_end = int(line_range[-1]) if line_range else line_start
-            path = _relative(str(entry.get("filename") or ""), ctx)
+            path = relative_path(str(entry.get("filename") or ""), ctx)
             message = str(entry.get("issue_text") or rule_id)
             findings.append(
                 Finding(

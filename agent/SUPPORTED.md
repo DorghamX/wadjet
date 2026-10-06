@@ -8,7 +8,7 @@ never disagree with this table.
 | ----------------- | -------------- | --------------- | -------------------------------------- |
 | `bandit`          | `bandit`       | `>=1.7.8,<2`    | fixture `fixtures/bandit/1.9.4/`       |
 | `pip_audit`       | `pip-audit`    | `>=2.7,<3`      | fixture `fixtures/pip-audit/2.10.1/`   |
-| `ruff`            | `ruff`         | `>=0.6,<1`      | T3.2                                   |
+| `ruff`            | `ruff`         | `>=0.6,<1`      | fixture `fixtures/ruff/0.16.10/`       |
 | `detect_secrets`  | `detect-secrets` | `>=1.4,<2`     | T3.3                                   |
 | `coverage`        | `coverage`     | `>=7.4,<8`      | report formats only - see below (T3.1) |
 
