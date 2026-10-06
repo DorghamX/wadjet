@@ -7,8 +7,10 @@ Supported version ranges are pinned in ``SUPPORTED.md``.
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
+import sys
 from dataclasses import dataclass
 from importlib import metadata
 from pathlib import Path
@@ -120,6 +122,21 @@ def probe(distribution: str, minimum: str, maximum: str) -> AdapterInfo:
     return AdapterInfo(installed=True, version=version, supported=supported, detail=detail)
 
 
+def local_executable(name: str) -> str | None:
+    """Where a bare command name resolves next to the running interpreter.
+
+    The agent scans with the tools from *its own* environment (``pip install
+    wadjet-agent[scanners]``), but the subprocess inherits whatever ``PATH``
+    the caller happened to have - in CI or a make target that often does not
+    include ``.venv/bin``. Prefer the interpreter's directory so the binary
+    ``probe`` reported as installed is the one we actually run.
+    """
+    if os.sep in name or (os.altsep and os.altsep in name):
+        return None
+    candidate = Path(sys.executable).parent / name
+    return str(candidate) if candidate.is_file() else None
+
+
 def run_command(argv: list[str], ctx: RunContext) -> tuple[int, str, str]:
     """Run one scanner; returns ``(returncode, stdout, stderr)``.
 
@@ -127,6 +144,10 @@ def run_command(argv: list[str], ctx: RunContext) -> tuple[int, str, str]:
     ``OSError`` when the executable is missing - adapters translate both
     into a recorded ``status=error`` run.
     """
+    argv = list(argv)
+    resolved = local_executable(argv[0])
+    if resolved is not None:
+        argv[0] = resolved
     completed = subprocess.run(
         argv,
         capture_output=True,

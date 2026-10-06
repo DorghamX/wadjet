@@ -22,8 +22,8 @@ code, tests and one docs line exist, `make lint test` is green and the commit me
 - [x] **T2.3 (M)** Knowledge base loader, full Bandit KB + completeness test, pip-audit enrichment
 - [x] **T2.4 (M)** `POST /api/v1/analyses` one-transaction ingest
 - [x] **T2.5 (M)** Gate engine, built-in default gate, stored results
-- [ ] **T2.6 (L)** Agent: CLI, config fetch, Bandit and pip-audit adapters, upload, exit codes, doctor, --dry-run
-- [ ] **T2.7 (S)** Sample vulnerable project and end-to-end script
+- [x] **T2.6 (L)** Agent: CLI, config fetch, Bandit and pip-audit adapters, upload, exit codes, doctor, --dry-run
+- [x] **T2.7 (S)** Sample vulnerable project and end-to-end script
 
 ## Phase 3: Remaining scanners and settings
 - [ ] **T3.1 (S)** Coverage report ingestion and coverage metric

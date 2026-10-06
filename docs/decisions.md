@@ -223,3 +223,43 @@ Format: date, task, decision, reason.
   deliberately vulnerable (and would be "fixed" by RET504), and the agent test
   file `test_cli.py` was renamed `test_agent_cli.py` to avoid a pytest module
   name collision with `server/tests/test_cli.py` (no `__init__.py` packages).
+- **T2.7 - The end-to-end script is `tests/e2e.py`, run by `make e2e`** (root
+  `tests/` is not in pytest's `testpaths`, so the suite never starts a server).
+  Each run creates a unique schema with the same `?options=search_path` URL
+  trick the test suite uses, migrates it, starts `wadjet-server serve` on a
+  free port, seeds admin/project/token in-process, drives the real `wadjet`
+  CLI against a temp **copy** of the sample, and drops the schema in `finally`.
+  All flag/triage manipulation is direct SQL - there is no triage API until
+  T4.x.
+- **T2.7 - Scanner binaries resolve next to the agent's interpreter first**
+  (`local_executable` in `adapters/base.py`). The first e2e run failed because
+  `bandit` was launched as a bare name and the inherited `PATH` (under `make`,
+  or any CI step without activation) lacks `.venv/bin` - while `probe()` had
+  reported bandit installed via importlib metadata. Preferring the
+  interpreter's directory makes probe and run agree in every environment;
+  absolute paths (`WADJET_PYTHON`) are left untouched.
+- **T2.7 - pip-audit's `-r` mode is impossible on this host, so the e2e
+  exercises the active-environment mode instead.** `-r` builds an internal
+  virtualenv (`venv.EnvBuilder(with_pip=True)`), and Debian's python3.12 has
+  no `ensurepip` (it ships in `python3-venv`, which needs sudo - forbidden).
+  The script bootstraps a dedicated, cached environment
+  (`~/.cache/wadjet/e2e-audit-venv`: `venv --without-pip` + `pip --python`
+  installs) with pip-audit 2.10.1 plus the sample's pinned requirements, sets
+  `WADJET_PYTHON` to it and leaves `dependency_files` empty - the agent's
+  documented "audit the active environment" path. Warm runs take ~14s.
+- **T2.7 - The sample pin moved from `requests==2.19.0` to `2.31.0`.**
+  2.19.0 cannot run under Python 3.12 (its urllib3 1.23 pin dies on
+  `six.moves`) and contradicts pip-audit's own `requests>=2.31.0` requirement,
+  which broke importing pip-audit itself in the audit environment. 2.31.0 is
+  still vulnerable (CVE-2024-35195, fixed in 2.32.0) and satisfies pip-audit.
+- **T2.7 - Dependency expectations match package + installed version + fix
+  version, never advisory ids.** The server stores only `vuln_id` (the upload's
+  `aliases` are dropped at ingest), and PyPI's advisory ids churn: the same
+  CVEs that carried 2018-era PYSEC ids in the recorded fixture come back as
+  `PYSEC-2026-...` today. Fix versions (`2.32.0`) are stable per CVE, so
+  `expected_findings.json` asserts those.
+- **T2.7 - The committed sample is ruff-excluded** (`tests/sample_projects` in
+  `extend-exclude`): linting or formatting the sample would silently "fix"
+  the vulnerabilities the acceptance checks depend on. The e2e always mutates
+  a temp copy, so the committed sample never changes - verified by two
+  consecutive green runs.

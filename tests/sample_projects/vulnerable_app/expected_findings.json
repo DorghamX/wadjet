@@ -1,0 +1,17 @@
+{
+  "_comment": "Known issues of this sample project. Bandit severities frozen from bandit 1.9.4 (HIGH+HIGH=critical, HIGH=high, MEDIUM=medium, LOW=low). The pip_audit expectation matches package + installed version + a fix version (the server stores only vuln_id, and advisory ids churn; fix versions do not). It needs network access to the vulnerability database.",
+  "bandit": [
+    {"rule_id": "B403", "file_path": "core.py", "severity": "low"},
+    {"rule_id": "B404", "file_path": "core.py", "severity": "low"},
+    {"rule_id": "B101", "file_path": "core.py", "severity": "low"},
+    {"rule_id": "B602", "file_path": "core.py", "severity": "critical"},
+    {"rule_id": "B301", "file_path": "core.py", "severity": "medium"},
+    {"rule_id": "B324", "file_path": "core.py", "severity": "critical"},
+    {"rule_id": "B311", "file_path": "core.py", "severity": "low"},
+    {"rule_id": "B105", "file_path": "core.py", "severity": "low"},
+    {"rule_id": "B101", "file_path": "utils.py", "severity": "low"}
+  ],
+  "pip_audit": [
+    {"package": "requests", "installed_version": "2.31.0", "fixed_versions_include": "2.32.0"}
+  ]
+}

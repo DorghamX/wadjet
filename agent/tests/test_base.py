@@ -2,15 +2,27 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from wadjet_agent.adapters.base import (
     RunContext,
     build_snippet,
+    local_executable,
     probe,
     trim_snippet,
     version_in_range,
 )
+
+
+def test_local_executable_resolution() -> None:
+    # Bare names prefer the interpreter's directory (the agent's own tools).
+    name = Path(sys.executable).name
+    resolved = local_executable(name)
+    assert resolved is not None and Path(resolved).is_file()
+    # Unknown commands and absolute paths (e.g. WADJET_PYTHON) are left alone.
+    assert local_executable("wadjet-no-such-command") is None
+    assert local_executable(sys.executable) is None
 
 
 def test_version_in_range() -> None:
