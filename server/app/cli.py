@@ -124,6 +124,42 @@ def healthcheck(
     print(response.text)
 
 
+@app.command()
+def create_admin(
+    username: str = typer.Option(..., help="Admin username."),
+    email: str = typer.Option(..., help="Admin email."),
+    password: str = typer.Option(..., help="Admin password (will be hashed with argon2id)."),
+) -> None:
+    """Create the first admin user (run once after database setup)."""
+    from app.security import hash_password
+
+    settings = _settings_or_exit()
+    engine = create_database_engine(settings)
+    _wait_or_exit(settings, engine)
+
+    # Check if any admin already exists
+    with engine.begin() as conn:
+        result = conn.execute(text("SELECT COUNT(*) FROM users WHERE is_admin = TRUE")).scalar()
+    if result and result > 0:
+        print("Admin user already exists.", file=sys.stderr)
+        engine.dispose()
+        raise SystemExit(1)
+
+    # Create the first admin
+    hashed = hash_password(password)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO users (username, email, password_hash, is_admin, is_active, "
+                "created_at, updated_at) "
+                "VALUES (:username, :email, :password_hash, TRUE, TRUE, NOW(), NOW())"
+            ),
+            {"username": username, "email": email, "password_hash": hashed},
+        )
+    engine.dispose()
+    print(f"Admin user {username} created.")
+
+
 def main() -> None:
     """Console script entry point."""
     app()

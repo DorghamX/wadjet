@@ -19,6 +19,7 @@ from app.db import (
     revoke_session,
 )
 from app.logging_setup import configure_logging
+from app.ratelimit import rate_limiter
 from app.security import hash_password, verify_password
 from app.session import create_session
 from app.session import get_session as get_db_session
@@ -71,6 +72,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @application.post("/session", status_code=201)
     def login(
         response: Response,
+        request: Request,
         form: OAuth2PasswordRequestForm = Depends(),
     ) -> dict[str, Any]:
         """Login and create a session.
@@ -79,6 +81,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         and returns user info. Rate limiting is applied at the middleware/edge.
         """
         engine = application.state.engine
+        client_ip = request.client.host if request.client else "unknown"
+
+        # Rate limiting: check if locked out
+        lockout_remaining = rate_limiter.is_locked_out(form.username, client_ip)
+        if lockout_remaining is not None:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Too many failed attempts. Try again in {int(lockout_remaining)} seconds.",
+            )
+
         # Look up user by username - we'll do a simple query
         with engine.begin() as conn:
             result = conn.execute(
@@ -90,13 +102,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ).first()
 
         if not result:
+            # Record failure even for unknown users to prevent user enumeration timing
+            rate_limiter.record_failure(form.username, client_ip)
             raise HTTPException(status_code=401, detail="Invalid credentials")
         user_id, username, stored_hash, is_active = result
         if not is_active:
+            rate_limiter.record_failure(form.username, client_ip)
             raise HTTPException(status_code=401, detail="User account is disabled")
 
         if not verify_password(form.password, stored_hash):
+            rate_limiter.record_failure(form.username, client_ip)
             raise HTTPException(status_code=401, detail="Invalid credentials")
+
+        # Record success and clear rate limit
+        rate_limiter.record_success(form.username, client_ip)
 
         # Create session
         session_token = create_session(
