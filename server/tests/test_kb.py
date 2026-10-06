@@ -339,3 +339,27 @@ def test_ruff_enrichment_unknown_family_uses_fallback() -> None:
     )
     result = enrich_finding(finding)
     assert result.impact == fallback_entry().impact
+
+
+def test_secret_enrichment_keeps_the_type_and_quotes_nothing() -> None:
+    """Section 11: secrets describe and rotate, never echo (CWE-798)."""
+    finding = make_finding(
+        tool="detect_secrets",
+        rule_id="Secret Keyword",
+        severity=Severity.blocker,
+        category=Category.secret,
+        title="Secret Keyword",
+        message="Secret Keyword detected on line 3; the value is never uploaded",
+        file_path="src/settings.py",
+        line_start=3,
+        line_end=3,
+        snippet="",
+        raw={"hashed_secret": "709b42261f7e848a258c446e1287cc4c926bad54"},
+    )
+    result = enrich_finding(finding)
+    assert result.title == "Secret Keyword"  # the type, not "Scanner finding"
+    assert result.description == finding.message
+    assert "Rotate the credential" in result.fix
+    assert "compromised" in result.impact
+    assert result.cwe == "CWE-798"
+    assert fallback_entry().title not in (result.title, result.description)

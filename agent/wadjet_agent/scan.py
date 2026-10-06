@@ -12,9 +12,10 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
-from wadjet_schema import AgentConfig, AnalysisUpload, Finding, filter_findings
+from wadjet_schema import AgentConfig, AnalysisUpload, Category, Finding, filter_findings
 
 from .adapters import ADAPTERS, Adapter, RunContext, enabled_adapters
+from .adapters.base import CONTEXT_LINES, trim_snippet
 from .ci import collect_ci_info, git_commit
 from .client import AgentError, fetch_config, upload_analysis
 from .coverage_report import collect_coverage_metrics, configured_report
@@ -80,6 +81,56 @@ def run_one_adapter(adapter: Adapter, ctx: RunContext) -> tuple[dict[str, Any], 
     return record, findings
 
 
+#: What replaces a line detect-secrets flagged inside someone else's snippet.
+SECRET_MASK = "<secret redacted>"
+
+
+def _mask_snippet(finding: Finding, secret_lines: set[int]) -> str:
+    """Replace snippet lines that carry a detected secret (step 6).
+
+    The snippet geometry mirrors ``build_snippet``: ``min(CONTEXT_LINES,
+    line_start - 1)`` lines above the flagged region, so snippet line
+    ``i`` shows source line ``start + i + 1``.
+    """
+    flagged_index = finding.line_start - 1
+    start = flagged_index - min(CONTEXT_LINES, flagged_index)
+    masked = [
+        SECRET_MASK if start + offset + 1 in secret_lines else text
+        for offset, text in enumerate(finding.snippet.split("\n"))
+    ]
+    return trim_snippet("\n".join(masked))
+
+
+def mask_secret_lines(findings: list[Finding]) -> list[Finding]:
+    """Scan flow step 6: no line detect-secrets flagged leaves the machine.
+
+    A secret finding already carries no snippet at all (its line IS the
+    secret); every other finding whose snippet shows one of those lines -
+    flagged or context - gets that line replaced with ``SECRET_MASK``.
+    """
+    secret_lines: dict[str, set[int]] = {}
+    for finding in findings:
+        if finding.category is Category.secret and finding.file_path:
+            secret_lines.setdefault(finding.file_path, set()).add(finding.line_start)
+    if not secret_lines:
+        return findings
+
+    masked: list[Finding] = []
+    for finding in findings:
+        if finding.category is Category.secret:
+            # Belt and braces: normalize already leaves it empty.
+            if finding.snippet:
+                finding = finding.model_copy(update={"snippet": ""})
+            masked.append(finding)
+            continue
+        lines = secret_lines.get(finding.file_path or "")
+        if not finding.snippet or not lines:
+            masked.append(finding)
+            continue
+        masked.append(finding.model_copy(update={"snippet": _mask_snippet(finding, lines)}))
+    return masked
+
+
 def print_plan(
     config: AgentConfig,
     ctx: RunContext,
@@ -135,6 +186,10 @@ def run_scan(
         record, produced = run_one_adapter(adapter, ctx)
         runs[adapter.name] = record
         findings.extend(produced)
+
+    # Step 6: mask secrets before anything else looks at the text (each
+    # snippet is trimmed when it is built; exclusions are the last pass).
+    findings = mask_secret_lines(findings)
 
     # Defense in depth: post-filter exclusions before the server's own pass.
     kept, _excluded = filter_findings(findings, ctx.exclusion_globs)

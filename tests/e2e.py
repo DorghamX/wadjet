@@ -142,9 +142,11 @@ def set_settings(
         "scanners": {
             "bandit": {"enabled": True},
             # The sample's frozen expectations cover Bandit and pip-audit
-            # only; Ruff's rule set drifts between releases, so the e2e keeps
-            # it out (the adapter's contract tests cover it).
+            # only; Ruff's rule set drifts between releases and detect-secrets
+            # wants a git checkout, so the e2e keeps both out (their contract
+            # tests cover them).
             "ruff": {"enabled": False},
+            "detect_secrets": {"enabled": False},
             "pip_audit": {
                 "enabled": pip_audit,
                 "dependency_files": dependency_files or [],

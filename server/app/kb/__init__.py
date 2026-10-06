@@ -11,6 +11,8 @@ Rules of the section, implemented here:
   family-level fallback in ``ruff.yml``.
 - pip-audit: description from the advisory, impact generic by vulnerability,
   fix text built from ``fixed_versions``.
+- detect-secrets: the detector type stays the title, the agent's message the
+  description, with rotation guidance and CWE-798 - never a value.
 - ``_fallback.yml`` for unknown rules.
 """
 
@@ -162,8 +164,38 @@ def _ruff_enrichment(finding: Finding) -> Enrichment:
     )
 
 
+def _secret_enrichment(finding: Finding) -> Enrichment:
+    """detect-secrets: keep the detector type, describe the situation.
+
+    The finding carries only file, line, type and hash (section 11), so the
+    text says what a committed credential means and how to recover - it
+    never quotes anything. The title stays the detector type rather than
+    the fallback's generic \"Scanner finding\", because the type is on the
+    keep list and is what the user needs to see first.
+    """
+    return Enrichment(
+        title=finding.title,
+        description=finding.message,
+        impact=(
+            "A credential committed to the repository is readable by anyone "
+            "with access to it - and by every fork, mirror and CI log that "
+            "ever saw it: once a secret is in history it must be treated as "
+            "compromised."
+        ),
+        fix=(
+            "Rotate the credential at its provider, replace the value with a "
+            "configuration or secret-manager reference, and purge the old "
+            "value from the repository history."
+        ),
+        references=[],
+        cwe="CWE-798",
+    )
+
+
 def enrich_finding(finding: Finding) -> Enrichment:
     """Produce the issue text for one finding (called at ingest)."""
+    if finding.category == Category.secret:
+        return _secret_enrichment(finding)
     if finding.category == Category.dependency:
         return _dependency_enrichment(finding)
     if finding.tool == "ruff":

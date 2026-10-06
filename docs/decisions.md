@@ -330,3 +330,50 @@ Format: date, task, decision, reason.
   rule set drifts between releases - the adapter's contract tests cover
   it. The baseline severity loop now iterates the expected entries
   instead of the stored issues, so extra tools can never break it.
+- **T3.3 - The keep list is enforced on both sides.** The agent's
+  detect-secrets normalize emits exactly file, line, type and hash:
+  `rule_id` = detector type, `raw = {"hashed_secret"}` and an empty
+  `snippet` (the source line IS the secret - it never leaves the machine).
+  The server's `_reject_secret_leaks` answers with 422 for a secret
+  finding carrying a snippet, vulnerability/dependency fields, or raw keys
+  beyond `hashed_secret`, before any database work, and the error detail
+  names the offending *fields* - echoing a value back would leak it into
+  response logs. Known limit: a rogue agent could hide a value in
+  `title`/`message`, which the server cannot judge; the schema and this
+  rule cover everything structural.
+- **T3.3 - Masking is by line location, not by value.** detect-secrets'
+  JSON carries no plaintext at all (only `hashed_secret`), so the agent
+  cannot know *what* to mask - but it knows *where*. Scan flow step 6
+  (`scan.mask_secret_lines`, run after all adapters, before exclusions)
+  replaces every line of any other finding's snippet - flagged or context
+  - that coincides with a detected secret line with `<secret redacted>`,
+  and force-clears a secret finding's own snippet as belt and braces. The
+  snippet geometry mirrors `build_snippet` (`min(3, line_start - 1)`
+  lines above), so line numbers agree exactly; masking happens before the
+  upload, so fingerprints are computed on the masked text and stay stable
+  across runs.
+- **T3.3 - Enrichment dispatches on the category, not the tool name.**
+  `enrich_finding` picks `_secret_enrichment` for `category == secret`
+  whatever tool reported it: the detector type stays the title (the
+  fallback's generic "Scanner finding" would hide it), the agent's message
+  becomes the description, impact/fix explain rotate-and-purge, CWE-798.
+- **T3.3 - Same-type secrets in one file collapse to one issue.** With
+  `snippet=""` the fingerprint (tool, rule, file, flagged, context -
+  deliberately line-blind, one fingerprint module) is identical for two
+  `Secret Keyword` hits in the same file, so ingest dedupes them. Accepted
+  cost of never storing the line; removing one of two keys therefore does
+  not resolve the issue until both are gone.
+- **T3.3 - e2e keeps detect-secrets disabled** (settings): it wants a git
+  checkout, and the frozen `expected_findings.json` covers Bandit and
+  pip-audit only - the contract tests and a live smoke run cover the
+  adapter. Outside a checkout `detect-secrets scan .` finds nothing on its
+  own (its own behavior); the agent passes `include_paths` through
+  positionally, and the scan flow already assumes a git repo for
+  `git_commit`.
+- **T3.3 - Fixture:** `fixtures/detect-secrets/1.5.0/` recorded with
+  positional file arguments so it works outside git and the `results`
+  keys come back relative with no rewriting; `sample/` holds planted fake
+  secrets (keyword, URL credential, PEM block -> `Secret Keyword`,
+  `Basic Auth Credentials`, `Private Key`). `run()` treats a stderr
+  "fatal: not a git repository" as noise: exit 0 plus parseable JSON is
+  success.

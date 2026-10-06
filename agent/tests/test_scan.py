@@ -217,6 +217,68 @@ def test_missing_coverage_report_warns_without_failing(
     assert "warning: coverage report not found: cov.xml" in out
 
 
+# --- secret masking (T3.3) ----------------------------------------------------
+
+
+def make_secret(path: str = "app.py", line: int = 10) -> Finding:
+    return Finding(
+        tool="detect_secrets",
+        rule_id="Secret Keyword",
+        severity="blocker",
+        category="secret",
+        title="Secret Keyword",
+        message="Secret Keyword detected",
+        file_path=path,
+        line_start=line,
+        line_end=line,
+        snippet="",
+        raw={"hashed_secret": "abc123"},
+    )
+
+
+def test_masking_is_a_no_op_without_secret_findings() -> None:
+    findings = [make_finding()]
+    assert scan_module.mask_secret_lines(findings) is findings
+
+
+def test_secret_findings_never_carry_a_snippet() -> None:
+    """Belt and braces: even a leaky normalize() gets its line stripped."""
+    secret = make_secret().model_copy(update={"snippet": "PASSWORD = 'hunter2-not-real'"})
+    masked = scan_module.mask_secret_lines([secret])
+    assert masked[0].snippet == ""
+
+
+def test_detected_secret_lines_are_redacted_in_other_snippets() -> None:
+    other = Finding(
+        tool="bandit",
+        rule_id="B105",
+        severity=Severity.medium,
+        category="vulnerability",
+        title="hardcoded password string",
+        message="hardcoded password string",
+        file_path="app.py",
+        line_start=9,
+        line_end=10,
+        snippet=(
+            "def handler(request):\n"  # line 6 (context)
+            "    token = get_token(request)\n"
+            "    return token\n"
+            "password = 'x'\n"  # line 9 (flagged, but not the secret line)
+            "db = open('/tmp/db')\n"  # line 10: the detected secret line
+            "\n"  # line 11 (context)
+            "def other():\n"
+            "    pass"
+        ),
+    )
+    masked = scan_module.mask_secret_lines([make_secret(line=10), other])
+    lines = masked[1].snippet.split("\n")
+    assert lines[4] == scan_module.SECRET_MASK  # source line 10
+    assert lines[3] == "password = 'x'"  # source line 9 stays
+    assert lines[0] == "def handler(request):"
+    assert lines[7] == "    pass"
+    assert masked[0].snippet == ""  # the secret's own finding
+
+
 # --- full run ---------------------------------------------------------------
 
 

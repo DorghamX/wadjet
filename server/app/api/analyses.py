@@ -25,7 +25,7 @@ from app.fingerprint import ComputedFinding, compute_fingerprints
 from app.gate import evaluate_gate
 from app.kb import enrich_finding
 from app.lifecycle import Event, ExistingIssue, LifecyclePlan, plan_lifecycle
-from wadjet_schema import AnalysisResult, AnalysisUpload, filter_findings
+from wadjet_schema import AnalysisResult, AnalysisUpload, Category, filter_findings
 
 #: Payload cap for uploads, compressed or not (section 11: 20 MB).
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
@@ -80,6 +80,43 @@ def _read_payload(request: Request, body: bytes) -> bytes:
     if encoding == "gzip":
         return _decompress_gzip(body)
     raise HTTPException(status_code=415, detail="Unsupported Content-Encoding")
+
+
+def _reject_secret_leaks(upload: AnalysisUpload) -> None:
+    """Never store secret values (section 11): a finding of category
+    ``secret`` may carry only file, line, type and hash.
+
+    Runs before any database work, so a leaky upload writes nothing. The
+    detail names the offending *fields* - never the content that might be
+    hiding inside them, which would echo the value back out.
+    """
+    for finding in upload.findings:
+        if finding.category != Category.secret:
+            continue
+        offenders = []
+        if finding.snippet:
+            offenders.append("snippet")
+        if (
+            finding.package
+            or finding.installed_version
+            or finding.vuln_id
+            or finding.aliases
+            or finding.fixed_versions
+            or finding.cwe
+        ):
+            offenders.append("vulnerability or dependency fields")
+        extra_keys = sorted(set(finding.raw or ()) - {"hashed_secret"})
+        if extra_keys:
+            offenders.append(f"raw keys {extra_keys}")
+        if offenders:
+            where = f"{finding.file_path}:{finding.line_start}"
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"secret finding {where} may only carry file, line, type "
+                    f"and hash; remove: {', '.join(offenders)}"
+                ),
+            )
 
 
 def _load_existing(conn: Connection, project_id: int) -> list[ExistingIssue]:
@@ -277,5 +314,6 @@ async def upload_analysis(
         upload = AnalysisUpload.model_validate_json(payload)
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=json.loads(exc.json())) from None
+    _reject_secret_leaks(upload)
     # Blocking database work off the event loop; the app's endpoints are sync.
     return await run_in_threadpool(_ingest, request.app.state.engine, upload, token)

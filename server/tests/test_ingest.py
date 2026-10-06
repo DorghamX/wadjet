@@ -147,7 +147,8 @@ def fetch_issues(engine: Engine, project_id: int) -> list[dict[str, Any]]:
         rows = (
             conn.execute(
                 text(
-                    "SELECT id, fingerprint, file_path, presence, triage_status, description, "
+                    "SELECT id, fingerprint, category, severity, file_path, snippet, "
+                    "presence, triage_status, description, "
                     "impact, fix, cwe, title, first_seen_analysis_id, last_seen_analysis_id "
                     "FROM issues WHERE project_id = :pid ORDER BY id"
                 ),
@@ -687,6 +688,91 @@ def test_ruff_description_comes_from_the_uploaded_explanation(
     assert issues[0]["description"] == "## What it does\nChecks for unused imports."
     assert issues[0]["impact"]  # F-family impact text
     assert "ruff check --fix" in issues[0]["fix"]
+
+
+def make_secret_finding(**overrides: object) -> dict[str, object]:
+    payload = make_finding(
+        tool="detect_secrets",
+        rule_id="Secret Keyword",
+        severity="blocker",
+        category="secret",
+        title="Secret Keyword",
+        message="Secret Keyword detected on line 3; the value is never uploaded",
+        file_path="src/settings.py",
+        line_start=3,
+        line_end=3,
+        snippet="",
+        raw={"hashed_secret": "709b42261f7e848a258c446e1287cc4c926bad54"},
+    )
+    payload.update(overrides)
+    return payload
+
+
+def test_secret_finding_stores_only_file_line_type_and_hash(
+    client: TestClient,
+    engine: Engine,
+    ingest_project: tuple[int, str],
+    project_token: str,
+) -> None:
+    """Section 11: the shape survives ingest with rotation guidance attached."""
+    project_id, key = ingest_project
+    response = upload(client, project_token, make_upload(key, [make_secret_finding()]))
+    assert response.status_code == 201
+
+    issue = fetch_issues(engine, project_id)[0]
+    assert issue["category"] == "secret"
+    assert issue["severity"] == "blocker"
+    assert issue["title"] == "Secret Keyword"  # the detector type stays the title
+    assert issue["description"].startswith("Secret Keyword detected")
+    assert issue["impact"] and issue["fix"]  # never-quote, rotate-and-purge text
+    assert issue["cwe"] == "CWE-798"
+    assert issue["snippet"] == ""  # the source line is never stored
+
+
+def test_server_rejects_a_secret_finding_with_a_snippet(
+    client: TestClient,
+    ingest_project: tuple[int, str],
+    project_token: str,
+) -> None:
+    _project_id, key = ingest_project
+    finding = make_secret_finding(snippet="PASSWORD = 'hunter2-not-real'")
+    response = upload(client, project_token, make_upload(key, [finding]))
+    assert response.status_code == 422
+    assert "file, line, type and hash" in response.json()["detail"]
+    assert "snippet" in response.json()["detail"]
+
+
+def test_server_rejects_raw_keys_beyond_the_hash_without_echoing_values(
+    client: TestClient,
+    engine: Engine,
+    ingest_project: tuple[int, str],
+    project_token: str,
+) -> None:
+    project_id, key = ingest_project
+    finding = make_secret_finding(raw={"hashed_secret": "abc123", "secret": "hunter2-not-real"})
+    response = upload(client, project_token, make_upload(key, [finding]))
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert "raw keys" in detail  # the offending key is named...
+    assert "hunter2-not-real" not in detail  # ...the value never is
+    with engine.begin() as conn:
+        count = conn.execute(
+            text("SELECT COUNT(*) FROM analyses WHERE project_id = :pid"),
+            {"pid": project_id},
+        ).scalar_one()
+    assert count == 0  # rejected before anything was written
+
+
+def test_server_rejects_secret_findings_with_other_payload(
+    client: TestClient,
+    ingest_project: tuple[int, str],
+    project_token: str,
+) -> None:
+    _project_id, key = ingest_project
+    finding = make_secret_finding(cwe="CWE-798")
+    response = upload(client, project_token, make_upload(key, [finding]))
+    assert response.status_code == 422
+    assert "vulnerability or dependency fields" in response.json()["detail"]
 
 
 # --- status derivation (pure) ------------------------------------------------

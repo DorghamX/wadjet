@@ -27,7 +27,7 @@ code, tests and one docs line exist, `make lint test` is green and the commit me
 
 ## Phase 3: Remaining scanners and settings
 - [x] **T3.1 (S)** Coverage report ingestion and coverage metric
-- [ ] **T3.2 (M)** Ruff adapter
+- [x] **T3.2 (M)** Ruff adapter
 - [ ] **T3.3 (M)** detect-secrets adapter with secret masking and server rejection rule
 - [ ] **T3.4 (M)** Settings schema, scanner options, exclusions (agent and server)
 - [ ] **T3.5 (S)** Scanner failure policy: incomplete analysis and synthetic gate condition
