@@ -15,6 +15,7 @@ from app.gate import (
     compute_issue_metrics,
     evaluate_conditions,
     load_gate_conditions,
+    scanner_errors_fail_gate,
 )
 from app.security import hash_password
 
@@ -229,6 +230,14 @@ def test_metrics_count_open_and_confirmed_only(engine: Engine, fresh_project: in
     with engine.connect() as conn:
         metrics = compute_issue_metrics(conn, fresh_project)
     assert metrics["issues_total"] == 2.0  # open + confirmed
+
+
+def test_scanner_errors_fail_gate_defaults_true() -> None:
+    """Section 6: only an explicit false opts out, anything else fails closed."""
+    assert scanner_errors_fail_gate({}) is True
+    assert scanner_errors_fail_gate({"fail_on_scanner_error": False}) is False
+    assert scanner_errors_fail_gate({"fail_on_scanner_error": "no"}) is True
+    assert scanner_errors_fail_gate({"scanners": {}}) is True
 
 
 # --- CRUD -------------------------------------------------------------------

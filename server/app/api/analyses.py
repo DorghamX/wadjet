@@ -22,7 +22,7 @@ from starlette.concurrency import run_in_threadpool
 from app.deps import require_project_token
 from app.exclusions import effective_exclusion_globs
 from app.fingerprint import ComputedFinding, compute_fingerprints
-from app.gate import evaluate_gate
+from app.gate import evaluate_gate, scanner_errors_fail_gate
 from app.kb import enrich_finding
 from app.lifecycle import Event, ExistingIssue, LifecyclePlan, plan_lifecycle
 from wadjet_schema import AnalysisResult, AnalysisUpload, Category, filter_findings
@@ -279,6 +279,7 @@ def _ingest(engine: Engine, upload: AnalysisUpload, token: dict[str, Any]) -> An
             project_id,
             analysis_status=status,
             uploaded_metrics=upload.metrics,
+            fail_on_scanner_error=scanner_errors_fail_gate(settings),
         )
         stored_metrics = {**upload.metrics, **computed_metrics}
         conn.execute(

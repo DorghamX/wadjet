@@ -150,18 +150,36 @@ def load_gate_conditions(conn: Connection, project_id: int) -> list[dict[str, An
     return [{"metric": row[0], "operator": row[1], "threshold": float(row[2])} for row in rows]
 
 
+def scanner_errors_fail_gate(settings: dict[str, Any]) -> bool:
+    """The section 6 failure policy flag: default true, fail closed.
+
+    Anything but an explicit ``false`` in the stored settings means a
+    scanner error fails the gate.
+    """
+    value = settings.get("fail_on_scanner_error", True)
+    return value if isinstance(value, bool) else True
+
+
 def evaluate_gate(
     conn: Connection,
     project_id: int,
     *,
     analysis_status: str,
     uploaded_metrics: dict[str, Any],
+    fail_on_scanner_error: bool = True,
 ) -> tuple[str, list[dict[str, Any]], dict[str, float]]:
     """Evaluate the project's gate for a freshly ingested analysis.
 
     Returns ``(gate_status, condition_details, metrics)`` where ``metrics``
     merges the computed issue metrics with the uploaded ones (coverage line
     percent comes from the agent's coverage step).
+
+    An incomplete analysis always gets the synthetic
+    ``all_scanners_completed`` row; the ``fail_on_scanner_error`` setting
+    (section 6, default true) decides whether that row *fails* the gate -
+    with the default, incomplete never passes, which is section 9's
+    "passed only if ... the analysis is complete". A project may opt out;
+    the analysis stays ``incomplete`` and never resolves issues either way.
     """
     metrics = compute_issue_metrics(conn, project_id)
     coverage = uploaded_metrics.get("coverage_line_percent")
@@ -169,11 +187,7 @@ def evaluate_gate(
         metrics["coverage_line_percent"] = float(coverage)
 
     details = evaluate_conditions(load_gate_conditions(conn, project_id), metrics)
-    complete = analysis_status == "complete"
-    if not complete:
-        # Section 9: passed only if no condition triggered *and* the
-        # analysis is complete. The synthetic row explains the failure in
-        # the UI and to the agent until T3.5 wires in the setting.
+    if analysis_status != "complete":
         details.insert(
             0,
             {
@@ -181,9 +195,9 @@ def evaluate_gate(
                 "operator": "==",
                 "threshold": 1,
                 "actual": 0,
-                "triggered": True,
+                "triggered": fail_on_scanner_error,
             },
         )
     triggered = any(detail["triggered"] for detail in details)
-    status = "passed" if complete and not triggered else "failed"
+    status = "passed" if not triggered else "failed"
     return status, details, metrics

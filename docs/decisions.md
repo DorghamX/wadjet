@@ -420,3 +420,24 @@ Format: date, task, decision, reason.
   round-trip), which already drives both the agent's config endpoint and
   the ingest drop with `excluded_count` (T2.4/T2.6) - one matcher in
   `wadjet_schema.exclusions`, applied twice as the guide requires.
+- **T3.5 - `fail_on_scanner_error` is the switch inside the synthetic
+  condition, not a second gate path.** `evaluate_gate` gained a
+  `fail_on_scanner_error` parameter (default true): an incomplete analysis
+  always gets the `all_scanners_completed` row first in `gate_details`, but
+  the row's `triggered` flag *is* the setting, and gate status is now
+  "passed iff nothing triggered". With the default this reproduces section
+  9 exactly (incomplete => synthetic triggered => failed); a project that
+  sets `fail_on_scanner_error: false` keeps the row and the `incomplete`
+  status while the gate may pass. Reading the flag is
+  `gate.scanner_errors_fail_gate(settings)`: only an explicit boolean
+  `false` opts out, anything else (junk, missing) fails closed - same
+  lenient-reader style as `effective_exclusion_globs`.
+- **T3.5 - The opt-out changes nothing else.** An incomplete analysis
+  still never resolves issues (lifecycle, section 5.4), the agent still
+  exits 3 before it looks at the gate (guide exit codes), and
+  `derive_analysis_status` still marks `complete` only when every reported
+  run is `ok`. "Missing scanner" stays the agent's job to record (a probe
+  or run failure writes `status=error`); the server cannot know which
+  enabled scanners an old agent has never heard of, and second-guessing
+  `scanner_runs` would break the one-contract rule between agent and
+  server.

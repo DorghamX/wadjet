@@ -451,6 +451,42 @@ def test_incomplete_analysis_resolves_nothing(
     assert conditions[0]["triggered"] is True
 
 
+def test_scanner_errors_can_be_non_fatal_per_settings(
+    client: TestClient,
+    engine: Engine,
+    ingest_project: tuple[int, str],
+    project_token: str,
+) -> None:
+    """Section 6: fail_on_scanner_error=false keeps the row, drops the failure."""
+    project_id, key = ingest_project
+    # A gate without the coverage condition, so nothing else can trigger.
+    attach_gate(engine, project_id, [("issues_blocker", ">", 0.0)])
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE projects SET settings = :settings WHERE id = :pid"),
+            {"settings": json.dumps({"fail_on_scanner_error": False}), "pid": project_id},
+        )
+
+    response = upload(
+        client,
+        project_token,
+        make_upload(
+            key,
+            [make_finding()],
+            scanner_runs={"bandit": {"version": "1.7.10", "status": "error", "error": "boom"}},
+        ),
+    )
+    body = response.json()
+    assert body["gate_status"] == "passed"  # the project opted out
+
+    analysis = fetch_analysis(engine, body["analysis_id"])
+    assert analysis["status"] == "incomplete"  # still recorded...
+    conditions = analysis["gate_details"]["conditions"]
+    assert conditions[0]["metric"] == "all_scanners_completed"
+    assert conditions[0]["triggered"] is False  # ...but not fatal
+    assert body["issues_resolved"] == 0  # an incomplete scan still resolves nothing
+
+
 def test_resolved_issue_reappears_with_triage_preserved(
     client: TestClient,
     engine: Engine,
