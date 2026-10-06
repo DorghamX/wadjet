@@ -22,3 +22,15 @@ Format: date, task, decision, reason.
   to the design file, but only `wadjet-build-guide.md` and `wadjet-design.html` are present.
   The eye mark and wordmark paths are taken from the `#lg` / `#wm` symbols in
   `wadjet-design.html` and written to `server/app/static/brand/`.
+- **T0.2 — The startup sequence lives in `wadjet-server serve`, not in the ASGI lifespan.**
+  Section 15.3.3 describes a process startup sequence (wait, lock, migrate, admin, serve).
+  Keeping it in the CLI means `create_app()` stays side-effect free, so tests can build an
+  application against any URL — including a dead database, which is how the `/healthz` 503
+  test is written.
+- **T0.2 — Redaction is applied twice.** Every message passes through
+  `Settings.redact()` before it is printed, and a `logging.RedactingFilter` is attached to
+  every root handler as a backstop. The filter is merged, never replaced, because handlers
+  outlive a single settings object.
+- **T0.2 — Alembic runs with an explicit revision anchor.** `0001_baseline` is empty on
+  purpose: migrations are forward-only, so every later revision has a parent and the
+  machinery can be tested against an empty database before any table exists.
