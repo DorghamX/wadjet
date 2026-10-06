@@ -1,0 +1,43 @@
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = [".venv", "server/migrations/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4", "RET", "PTH"]
+ignore = ["B008"]  # FastAPI Depends() in defaults is the documented pattern
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E501"]
+"server/app/templates/*" = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "wadjet_agent", "wadjet_schema"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+files = ["schema/wadjet_schema", "server/app", "agent/wadjet_agent"]
+warn_unreachable = true
+show_error_codes = true
+mypy_path = ["schema", "server", "agent"]
+
+[[tool.mypy.overrides]]
+module = ["tests.*", "tests.*.*"]
+disallow_untyped_defs = false
+
+[tool.pytest.ini_options]
+testpaths = ["server/tests", "agent/tests", "schema/tests"]
+addopts = "-q --strict-markers"
+filterwarnings = ["error::DeprecationWarning:app.*"]
+
+[tool.coverage.run]
+branch = true
+source = ["server/app", "agent/wadjet_agent", "schema/wadjet_schema"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false

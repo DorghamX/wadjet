@@ -1,0 +1,45 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: wadjet
+          POSTGRES_PASSWORD: wadjet
+          POSTGRES_DB: wadjet
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U wadjet"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql+psycopg://wadjet:wadjet@localhost:5432/wadjet
+      TEST_DATABASE_URL: postgresql+psycopg://wadjet:wadjet@localhost:5432/wadjet
+      WADJET_SECRET_KEY: ci-only-0123456789abcdef0123456789abcdef
+      WADJET_BASE_URL: http://localhost:8080
+      WADJET_COOKIE_SECURE: "false"
+    strategy:
+      matrix:
+        python-version: ["3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install
+        run: make setup
+      - name: Lint
+        run: make lint
+      - name: Test
+        run: make test
