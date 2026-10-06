@@ -14,6 +14,8 @@ from typing import Any
 
 from sqlalchemy import Engine, text
 
+from app.audit import write_audit
+
 
 def generate_token() -> tuple[str, str, str]:
     """Generate a new project token.
@@ -86,6 +88,15 @@ def create_token(
         )
         token_id = result.scalar_one()
 
+    write_audit(
+        engine,
+        action="token.create",
+        actor_id=created_by,
+        target_type="project",
+        target_id=project_id,
+        details={"name": name, "prefix": prefix, "token_id": token_id},
+    )
+
     return full_token, token_id
 
 
@@ -139,12 +150,13 @@ def update_last_used(engine: Engine, token_id: int) -> None:
         )
 
 
-def revoke_token(engine: Engine, token_id: int) -> bool:
+def revoke_token(engine: Engine, token_id: int, actor_id: int | None = None) -> bool:
     """Revoke an API token.
 
     Args:
         engine: Database engine
         token_id: Token ID to revoke
+        actor_id: User performing the revocation (for the audit log)
 
     Returns:
         True if a token was revoked, False if not found or already revoked
@@ -153,11 +165,21 @@ def revoke_token(engine: Engine, token_id: int) -> bool:
         result = conn.execute(
             text(
                 "UPDATE api_tokens SET revoked_at = NOW() "
-                "WHERE id = :tid AND revoked_at IS NULL RETURNING 1"
+                "WHERE id = :tid AND revoked_at IS NULL RETURNING project_id"
             ),
             {"tid": token_id},
         ).first()
-    return result is not None
+    if result is None:
+        return False
+    write_audit(
+        engine,
+        action="token.revoke",
+        actor_id=actor_id,
+        target_type="project",
+        target_id=result[0],
+        details={"token_id": token_id},
+    )
+    return True
 
 
 def list_tokens(engine: Engine, project_id: int) -> list[dict[str, Any]]:

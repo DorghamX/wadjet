@@ -10,13 +10,14 @@ from fastapi.responses import JSONResponse
 from fastapi.security import (
     HTTPAuthorizationCredentials,
     HTTPBearer,
-    OAuth2PasswordBearer,
     OAuth2PasswordRequestForm,
 )
 from sqlalchemy import text
 from starlette.middleware.sessions import SessionMiddleware
 
+from app.audit import write_audit
 from app.config import Settings, load_settings
+from app.csrf import CsrfMiddleware
 from app.db import (
     create_database_engine,
     create_session_factory,
@@ -34,7 +35,6 @@ SECRET_KEY = "<<<CHANGE_ME>>>"
 
 password_hasher = PasswordHasher()
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 token_bearer = HTTPBearer(auto_error=False)
 
 
@@ -66,15 +66,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         same_site="lax",
         https_only=resolved.cookie_secure,
     )
+    application.add_middleware(CsrfMiddleware, secure=resolved.cookie_secure)
 
     # --- Auth dependencies ---
 
-    def get_current_user(token: str = Depends(oauth2_scheme)) -> dict[str, Any]:
-        """FastAPI dependency: look up the session for the given bearer token."""
+    def get_current_user(
+        request: Request,
+        credentials: HTTPAuthorizationCredentials | None = Depends(token_bearer),
+    ) -> dict[str, Any]:
+        """FastAPI dependency: resolve the current user.
+
+        Auth: session cookie for the UI (section 15), with a Bearer session
+        token accepted as a fallback for API clients.
+        """
+        token = credentials.credentials if credentials is not None else None
+        if not token:
+            token = request.cookies.get("wadjet_session")
+        if not token:
+            raise HTTPException(status_code=401, detail="Authentication required")
         session = get_db_session(application.state.engine, token)
         if not session or not session.get("user_id"):
             raise HTTPException(status_code=401, detail="Authentication required")
-        return {"user_id": session["user_id"]}
+        return {"user_id": session["user_id"], "session_token": token}
 
     def require_project_token(
         credentials: HTTPAuthorizationCredentials | None = Depends(token_bearer),
@@ -142,11 +155,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         # Record success and clear rate limit
         rate_limiter.record_success(form.username, client_ip)
+        write_audit(
+            engine,
+            action="login",
+            actor_id=user_id,
+            target_type="user",
+            target_id=user_id,
+            ip=client_ip,
+        )
 
         # Create session
-        session_token = create_session(
-            engine, user_id, remember_me=form.password == form.password
-        )  # placeholder
+        session_token = create_session(engine, user_id)
 
         # Set cookie
         response.set_cookie(
@@ -165,8 +184,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         """Logout and revoke the current session."""
         # Read session token from cookie
         token = request.cookies.get("wadjet_session")
+        actor_id = None
         if token:
+            session = get_db_session(application.state.engine, token)
+            if session:
+                actor_id = session.get("user_id")
             revoke_session(application.state.engine, token)
+        write_audit(
+            application.state.engine,
+            action="logout",
+            actor_id=actor_id,
+            target_type="user",
+            target_id=actor_id,
+            ip=request.client.host if request.client else None,
+        )
         response.delete_cookie("wadjet_session")
         return {"detail": "logged out"}
 
