@@ -72,6 +72,14 @@ class RunContext:
         enabled = options.get("enabled", True)
         return bool(enabled)
 
+    def timeout_for(self, name: str) -> float:
+        """One scanner's timeout in seconds (section 10): its own override,
+        else the run's global timeout."""
+        override = self.tool_settings(name).get("timeout")
+        if isinstance(override, (int, float)) and not isinstance(override, bool) and override > 0:
+            return float(override)
+        return self.timeout
+
 
 @runtime_checkable
 class Adapter(Protocol):

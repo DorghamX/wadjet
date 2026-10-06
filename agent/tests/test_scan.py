@@ -340,6 +340,45 @@ def test_adapter_crash_is_recorded_not_fatal(
     assert "adapter exploded" in record["error"]
 
 
+def test_run_one_adapter_honours_the_per_scanner_timeout() -> None:
+    """Section 10: a scanner runs under its own timeout when settings give one."""
+
+    class TimeoutRecorder:
+        name = "stub"
+        seen: float | None = None
+
+        def info(self) -> AdapterInfo:
+            return AdapterInfo(installed=True, version="1.0", supported=True, detail="stub 1.0")
+
+        def run(self, ctx: RunContext) -> RawOutput:
+            self.seen = ctx.timeout
+            return RawOutput({"ok": True}, duration=0.1)
+
+        def normalize(self, raw: RawOutput, ctx: RunContext) -> list[Finding]:
+            return []
+
+    def context(settings: dict[str, Any]) -> RunContext:
+        return RunContext(
+            repo_root=Path(),
+            include_paths=["."],
+            exclusion_globs=[],
+            python_executable="python3",
+            settings=settings,
+            timeout=300.0,
+        )
+
+    recorder = TimeoutRecorder()
+    record, findings = scan_module.run_one_adapter(
+        recorder, context({"scanners": {"stub": {"timeout": 12}}})
+    )
+    assert record["status"] == "ok" and findings == []
+    assert recorder.seen == 12.0  # the scanner's own override
+
+    recorder = TimeoutRecorder()
+    scan_module.run_one_adapter(recorder, context({}))
+    assert recorder.seen == 300.0  # the run's global timeout
+
+
 def test_network_error_propagates_as_agent_error(
     monkeypatch: pytest.MonkeyPatch, uploads: list[Any]
 ) -> None:

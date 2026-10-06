@@ -14,6 +14,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.api.agent import router as agent_router
 from app.api.analyses import router as analyses_router
 from app.api.gates import router as gates_router
+from app.api.projects import router as projects_router
 from app.audit import write_audit
 from app.config import Settings, load_settings
 from app.csrf import CsrfMiddleware
@@ -73,6 +74,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.include_router(agent_router)
     application.include_router(analyses_router)
     application.include_router(gates_router)
+
+    # --- Project settings (section 10) ---
+    application.include_router(projects_router)
 
     @application.post("/session", status_code=201)
     def login(

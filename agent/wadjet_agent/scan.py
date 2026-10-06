@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import sys
 from collections.abc import Callable, Mapping
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -62,9 +63,11 @@ def _default_python() -> str:
 def run_one_adapter(adapter: Adapter, ctx: RunContext) -> tuple[dict[str, Any], list[Finding]]:
     """Run one adapter and record its scanner_runs entry (section 6)."""
     info = adapter.info()
+    # Each scanner runs under its own timeout when settings give it one.
+    adapter_ctx = replace(ctx, timeout=ctx.timeout_for(adapter.name))
     record: dict[str, Any] = {"version": info.version}
     try:
-        raw = adapter.run(ctx)
+        raw = adapter.run(adapter_ctx)
     except Exception as exc:  # noqa: BLE001 - a crash must not kill the scan
         record.update(status="error", duration=0.0, error=f"{adapter.name} crashed: {exc}")
         return record, []
@@ -73,7 +76,7 @@ def run_one_adapter(adapter: Adapter, ctx: RunContext) -> tuple[dict[str, Any], 
         record.update(status="error", error=raw.error)
         return record, []
     try:
-        findings = adapter.normalize(raw, ctx)
+        findings = adapter.normalize(raw, adapter_ctx)
     except Exception as exc:  # noqa: BLE001 - malformed output must not kill the scan
         record.update(status="error", error=f"{adapter.name} output could not be parsed: {exc}")
         return record, []

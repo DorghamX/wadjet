@@ -377,3 +377,46 @@ Format: date, task, decision, reason.
   `Basic Auth Credentials`, `Private Key`). `run()` treats a stderr
   "fatal: not a git repository" as noise: exit 0 plus parseable JSON is
   success.
+- **T3.4 - One validated settings schema, additive to the frozen contract.**
+  `wadjet_schema.ProjectSettings` (new module `settings.py`) is the
+  write-side validator for `projects.settings`; `AgentConfig.settings`
+  stays a plain dict because T0.4 froze the agent contract - the server
+  validates on write, the agent keeps reading known keys leniently (one
+  validator, no drift). Per T0.4's rule this note records the additive
+  contract change: `ProjectSettings`, `ScannerSettings`, `ScopeSettings`,
+  `ScannersSettings`, `SCANNER_NAMES` and `DEFAULT_TIMEOUT_SECONDS` are
+  now exported from `wadjet_schema`.
+- **T3.4 - Structured options only, enforced by `extra="forbid"` at every
+  level.** Section 10's named options are the whole vocabulary:
+  bandit `skipped_test_ids` / `minimum_confidence` (Literal low|medium|
+  high), pip-audit `dependency_files` / `dependency_default_severity`
+  (Severity names), ruff `families` (uppercase codes; `S` rejected - it
+  duplicates Bandit), coverage `report_path`, plus `enabled` and a
+  positive per-scanner `timeout` on every scanner. A smuggled `args` /
+  `extra_args` key or an unknown scanner fails validation with 422 and
+  never reaches the database. Scope: `include` (at least one non-empty
+  path, default `.`) and `exclude` (default = `DEFAULT_EXCLUSION_GLOBS`,
+  exactly the guide's editable UI list). Global: `fail_on_scanner_error`
+  (default true per section 6) and `timeout_seconds` (default 300, must be
+  positive). Gate choice, general fields, tokens and members are not
+  settings - they live on the project row and their own tables.
+- **T3.4 - Settings endpoints: `GET/PUT /api/v1/projects/{id}/settings`.**
+  GET needs `project.browse`, PUT needs `project.admin`; the PUT body is a
+  complete `ProjectSettings` (pydantic fills defaults for omitted fields),
+  so stored JSON is valid by construction, and a null or historically
+  invalid row degrades to defaults on read instead of 500ing. Each change
+  is audited as `project.settings_update` with the leaf-level key paths
+  that changed (`scanners.ruff.families`, ...) - key paths, not values.
+  The choice of PUT (whole-object replace) over merge-PATCH keeps
+  validation of the *final* state trivial, which is the point of a
+  server-side, validated schema.
+- **T3.4 - Per-scanner timeouts resolve through `RunContext.timeout_for`**
+  (the scanner's own positive override, else the run's global
+  `timeout_seconds`), and `run_one_adapter` runs each adapter under a
+  context carrying that timeout. Booleans and non-positive values fall
+  back rather than surprising a scanner with a 0-second budget.
+- **T3.4 - No new exclusion logic.** The schema's `scope.exclude` feeds
+  the existing `effective_exclusion_globs` (asserted through the API
+  round-trip), which already drives both the agent's config endpoint and
+  the ingest drop with `excluded_count` (T2.4/T2.6) - one matcher in
+  `wadjet_schema.exclusions`, applied twice as the guide requires.

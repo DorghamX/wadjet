@@ -67,6 +67,28 @@ def test_run_context_reads_structured_tool_settings() -> None:
     assert ctx.tool_settings("nothing") == {}
 
 
+def test_run_context_resolves_the_per_scanner_timeout() -> None:
+    """Section 10: a scanner's own timeout wins; anything odd falls back."""
+    ctx = RunContext(
+        repo_root=Path(),
+        include_paths=["."],
+        exclusion_globs=[],
+        python_executable="python3",
+        settings={
+            "scanners": {
+                "bandit": {"timeout": 7},
+                "ruff": {"timeout": 0},  # not positive: fall back
+                "coverage": {"timeout": True},  # a bool is not a number here
+            },
+        },
+        timeout=300.0,
+    )
+    assert ctx.timeout_for("bandit") == 7.0
+    assert ctx.timeout_for("ruff") == 300.0
+    assert ctx.timeout_for("coverage") == 300.0
+    assert ctx.timeout_for("pip_audit") == 300.0  # no override configured
+
+
 def test_build_snippet_matches_the_server_split_convention(tmp_path: Path) -> None:
     source = tmp_path / "app.py"
     source.write_text("\n".join(f"line {number}" for number in range(1, 21)) + "\n")
