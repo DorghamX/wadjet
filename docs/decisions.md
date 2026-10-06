@@ -441,3 +441,37 @@ Format: date, task, decision, reason.
   enabled scanners an old agent has never heard of, and second-guessing
   `scanner_runs` would break the one-contract rule between agent and
   server.
+- **T4.0 - `seed-demo` is one idempotent transaction keyed on the
+  `demo-admin` user.** All rows are inserted between `engine.begin()` and
+  commit: a failed seed leaves nothing behind, and a second run prints
+  "already present - skipped" (exit 0) instead of duplicating. The demo
+  identity is unambiguous by construction - `demo-*` usernames, the fixed
+  project keys `payments` / `web-portal` / `data-pipeline`, one group name
+  - so nothing outside the dataset can be touched and a manual reset is
+  "delete those keys". There is deliberately no `--force` yet; the seed is
+  cheap to re-run after a wipe. All five accounts share one password
+  (`demo-password`), hashed once and reused (same password, same verify),
+  and the command prints the login line - demo tooling, not production
+  provisioning.
+- **T4.0 - Historical gate results are produced by the real evaluator,
+  not by hand.** `evaluate_gate` gained an `issue_metrics` override so the
+  seed can hand each analysis its own point-in-time counts; everything
+  else (condition loading, the synthetic `all_scanners_completed` row,
+  status derivation) stays the one gate evaluator from section 9 - the
+  seed contains no gate logic of its own. The trade-off: older analyses'
+  metrics are the seed author's story (passed -> failed on coverage ->
+  failed on everything for payments; found-and-fixed for web-portal;
+  incomplete for data-pipeline), while the *latest* analysis of every
+  project must equal what `compute_issue_metrics` returns today - the
+  test recomputes it through `evaluate_gate` and diffs status, conditions
+  and metrics. Gate name is `Release gate` because gate names are unique
+  and existing tests already claim "Strict".
+- **T4.0 - Seed introduces the `triaged` timeline event.** The app only
+  produced `created` / `resolved_by_scan` / `reopened_by_scan` so far; the
+  seed adds `triaged` with payload `{status, reason?}` because an issue
+  that shows a triage in its row but nothing in its timeline lies.
+  **T4.4's triage action must append this same type** (or the seed gets
+  updated in the same commit). Assignment events are *not* invented yet -
+  T4.4 defines assignment first. Notifications have no table until T5.2,
+  which extends the seed. Seeded secret findings carry an empty snippet
+  like every other ingest path (the T3.3 rule).

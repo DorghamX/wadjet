@@ -93,3 +93,15 @@ def test_wait_for_database_gives_up_and_never_prints_the_password(seconds: int, 
         assert wait_for_database(engine, seconds, settings.redact) is False
     engine.dispose()
     assert SECRET not in caplog.text
+
+
+def test_seed_demo_seeds_once_then_skips(database_url: str) -> None:
+    first = runner.invoke(cli_app, ["seed-demo"], env=_env(database_url))
+    assert first.exit_code == 0, _output(first)
+    out = _output(first)
+    assert "Demo data seeded:" in out
+    assert "demo-admin" in out and "demo-password" in out
+
+    second = runner.invoke(cli_app, ["seed-demo"], env=_env(database_url))
+    assert second.exit_code == 0, _output(second)
+    assert "already present - skipped" in _output(second)

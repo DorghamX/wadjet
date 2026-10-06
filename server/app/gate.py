@@ -167,6 +167,7 @@ def evaluate_gate(
     analysis_status: str,
     uploaded_metrics: dict[str, Any],
     fail_on_scanner_error: bool = True,
+    issue_metrics: dict[str, float] | None = None,
 ) -> tuple[str, list[dict[str, Any]], dict[str, float]]:
     """Evaluate the project's gate for a freshly ingested analysis.
 
@@ -180,8 +181,16 @@ def evaluate_gate(
     with the default, incomplete never passes, which is section 9's
     "passed only if ... the analysis is complete". A project may opt out;
     the analysis stays ``incomplete`` and never resolves issues either way.
+
+    ``issue_metrics`` overrides the computed metrics: ``seed-demo`` passes
+    each historical analysis' own counts, so past gate results stay honest
+    instead of being recomputed from today's issues.
     """
-    metrics = compute_issue_metrics(conn, project_id)
+    metrics = (
+        dict(issue_metrics)
+        if issue_metrics is not None
+        else compute_issue_metrics(conn, project_id)
+    )
     coverage = uploaded_metrics.get("coverage_line_percent")
     if isinstance(coverage, (int, float)):
         metrics["coverage_line_percent"] = float(coverage)

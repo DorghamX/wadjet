@@ -14,6 +14,8 @@ from app.config import ConfigError, Settings, load_settings
 from app.db import advisory_lock, create_database_engine, wait_for_database
 from app.logging_setup import configure_logging
 from app.migrate import upgrade_to_head
+from app.seed import DEMO_ADMIN, DEMO_PASSWORD
+from app.seed import seed_demo as seed_demo_data
 
 app = typer.Typer(
     help="Wadjet quality gate server.",
@@ -158,6 +160,22 @@ def create_admin(
         )
     engine.dispose()
     print(f"Admin user {username} created.")
+
+
+@app.command()
+def seed_demo() -> None:
+    """Insert demo users, projects, analyses and issues (T4.0, for the UI)."""
+    settings = _settings_or_exit()
+    engine = create_database_engine(settings)
+    _wait_or_exit(settings, engine)
+    summary = seed_demo_data(engine)
+    engine.dispose()
+    if not summary:
+        print("Demo data already present - skipped.")
+        return
+    counts = ", ".join(f"{count} {name}" for name, count in summary.items())
+    print(f"Demo data seeded: {counts}.")
+    print(f"Log in as {DEMO_ADMIN} / {DEMO_PASSWORD}.")
 
 
 def main() -> None:
