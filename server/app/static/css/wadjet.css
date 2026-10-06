@@ -1,0 +1,87 @@
+/* Wadjet UI: tokens and components, exactly as specified in wadjet-design.html.
+   Light and dark follow the system until the theme toggle records a choice
+   (data-theme on <html>). Status is always a word as well as a color. */
+
+:root{--bg:#f3f5f8;--sf:#fff;--ink:#14202e;--mut:#596779;--line:#d6dde7;--pri:#1f3955;--onp:#fff;--acc:#146fde;--gold:#e0b567;--pup:#1f3955;--ok:#17783f;--okb:#dff3e6;--bad:#b8322a;--badb:#fbe3df;--wn:#8a5a00;--wnb:#faecc8;--hl:#fff3c4;--code:#f5f7fa;--hi:#c4631a;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0d1420;--sf:#151e2d;--ink:#e5ecf5;--mut:#93a3b8;--line:#263246;--pri:#9dbbe4;--onp:#0b1626;--acc:#5ea1ff;--pup:#12263f;--ok:#6fd694;--okb:#143a24;--bad:#ff8f84;--badb:#4a1d19;--wn:#f0c26a;--wnb:#40300d;--hl:#4a4015;--code:#0f1826;--hi:#f09a5a}}
+:root[data-theme="dark"]{--bg:#0d1420;--sf:#151e2d;--ink:#e5ecf5;--mut:#93a3b8;--line:#263246;--pri:#9dbbe4;--onp:#0b1626;--acc:#5ea1ff;--pup:#12263f;--ok:#6fd694;--okb:#143a24;--bad:#ff8f84;--badb:#4a1d19;--wn:#f0c26a;--wnb:#40300d;--hl:#4a4015;--code:#0f1826;--hi:#f09a5a}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*::before,*::after{box-sizing:inherit}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 15px/1.5 "IBM Plex Sans",system-ui,sans-serif}
+.m,code{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:13px}
+.mu{color:var(--mut)}
+.wrap{max-width:1040px;margin:0 auto;padding:32px 20px 56px}
+h1{font-size:46px;line-height:1;margin:0;letter-spacing:-.02em}
+h2{font-size:19px;margin:40px 0 4px}
+h3{font-size:15px;margin:0 0 6px}
+p{margin:0 0 10px;max-width:70ch}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.hero{display:flex;gap:20px;align-items:center;flex-wrap:wrap}
+.hero svg{width:min(380px,100%);height:auto;aspect-ratio:963/259}.vh{position:absolute;left:-9999px}
+.sw{display:flex;gap:14px;flex-wrap:wrap;margin-top:16px}
+.sw span{display:flex;align-items:center;gap:8px;font-size:13px}
+.sw b{width:28px;height:28px;border-radius:6px;border:1px solid var(--line)}
+.win{border:1px solid var(--line);border-radius:10px;background:var(--sf);overflow:hidden;margin-top:8px}
+.tb{display:flex;gap:10px;align-items:center;padding:8px 14px;border-bottom:1px solid var(--line);background:var(--bg)}
+.tb svg{width:28px;height:21px}
+.tb .m{margin-left:auto;color:var(--mut)}
+.bd{padding:16px;overflow-x:auto}
+.t{width:100%;border-collapse:collapse;min-width:620px}
+.t th{text-align:left;font-weight:500;color:var(--mut);padding:6px 10px;border-bottom:1px solid var(--line)}
+.t td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+.c{display:inline-block;padding:1px 8px;border-radius:4px;font-size:13px;font-weight:500;border:1px solid transparent}
+.ok{background:var(--okb);color:var(--ok)}.bad{background:var(--badb);color:var(--bad)}.wn{background:var(--wnb);color:var(--wn)}.nt{border-color:var(--line);color:var(--mut)}
+.b{display:inline-block;padding:6px 12px;border:1px solid var(--line);border-radius:6px;background:var(--sf);color:var(--ink);font:500 14px "IBM Plex Sans",system-ui,sans-serif;cursor:pointer}
+.b.p{background:var(--pri);color:var(--onp);border-color:var(--pri)}
+.b:disabled{opacity:.5;cursor:not-allowed}
+.g{display:grid;gap:14px}.g2{grid-template-columns:230px 1fr}.g3{grid-template-columns:1fr 290px}.g4{grid-template-columns:repeat(4,1fr)}
+@media (max-width:760px){.g2,.g3{grid-template-columns:1fr}.g4{grid-template-columns:1fr 1fr}}
+.k{border:1px solid var(--line);border-radius:8px;padding:12px}
+.v{font-size:26px;font-weight:600;line-height:1.2}
+.ban{padding:12px 14px;border-radius:8px;border:1px solid var(--bad);background:var(--badb);margin-bottom:14px}
+.ban b{color:var(--bad)}
+.ban ul{margin:6px 0 0;padding-left:18px}
+.sv{border-left:4px solid var(--mut);padding-left:8px;white-space:nowrap}
+.s1{border-color:#7a1a14}.s2{border-color:var(--bad)}.s3{border-color:var(--hi)}.s4{border-color:var(--wn)}
+.code{background:var(--code);border:1px solid var(--line);border-radius:6px;padding:6px 0;overflow-x:auto;margin:6px 0 10px}
+.code div{padding:0 12px;white-space:pre;font:13px/1.6 "IBM Plex Mono",ui-monospace,monospace}
+.code .h{background:var(--hl)}
+.bars{display:flex;align-items:flex-end;gap:4px;height:48px;margin-top:6px}
+.bars i{flex:1;background:var(--pri);opacity:.75;border-radius:2px 2px 0 0}
+.tabs{display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid var(--line);margin:-4px 0 14px}
+.tabs a{padding:6px 12px;color:var(--mut);text-decoration:none;border-bottom:2px solid transparent}
+.tabs a.on{color:var(--ink);border-color:var(--acc);font-weight:500}
+.tl{list-style:none;margin:0;padding:0 0 0 12px;border-left:2px solid var(--line)}
+.tl li{margin:0 0 10px;padding-left:10px}
+label{display:block;font-size:13px;color:var(--mut)}
+.f{display:block;width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--sf);color:var(--ink);font:inherit;margin:2px 0 8px}
+.ls{list-style:none;margin:0 0 12px;padding:0}.ls li{display:flex;justify-content:space-between;padding:2px 0}
+.gr{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
+.gr .f{width:auto;margin:0}
+
+/* --- App shell (T4.1) ---------------------------------------------------- */
+
+/* Skip link: first in tab order, visible only when focused. */
+.skip{position:absolute;left:-9999px;top:8px;z-index:10;background:var(--sf);color:var(--ink);padding:8px 14px;border:1px solid var(--acc);border-radius:6px;text-decoration:none}
+.skip:focus{left:8px}
+
+/* Top bar on every page: brand, Projects, Gates, Inbox, Admin. */
+.topbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:8px 16px;border-bottom:1px solid var(--line);background:var(--sf)}
+.topbar .brand{display:flex;gap:8px;align-items:center;color:var(--ink);text-decoration:none;margin-right:10px;padding:4px 2px}
+.topbar .brand svg{width:28px;height:21px}
+.topbar nav{display:flex;gap:2px;flex-wrap:wrap}
+.topbar nav a{padding:6px 12px;color:var(--mut);text-decoration:none;border-bottom:2px solid transparent}
+.topbar nav a:hover{color:var(--ink)}
+.topbar nav a.on{color:var(--ink);border-color:var(--acc);font-weight:500}
+.topbar .end{display:flex;gap:8px;align-items:center;margin-left:auto;flex-wrap:wrap}
+.topbar .end form{margin:0}
+.topbar .end .m{max-width:22ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media (max-width:760px){.topbar{gap:4px}.topbar nav a{padding:6px 8px}}
+
+/* Sign-in card (composed from the design's parts). */
+.auth{max-width:380px;margin:56px auto;border:1px solid var(--line);border-radius:10px;background:var(--sf);padding:24px}
+.auth-brand{display:flex;gap:14px;align-items:center;margin-bottom:18px}
+.auth-brand svg{width:63px;height:48px;flex:none}
+.auth-brand h1{font-size:26px}
+.auth-brand p{margin:2px 0 0;font-size:14px}
+.auth .b.p{width:100%;padding:8px 12px;font-size:15px}

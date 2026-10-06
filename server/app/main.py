@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from argon2 import PasswordHasher
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import text
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.staticfiles import StaticFiles
+from starlette.templating import Jinja2Templates
 
 from app.api.agent import router as agent_router
 from app.api.analyses import router as analyses_router
@@ -30,6 +33,15 @@ from app.ratelimit import rate_limiter
 from app.security import hash_password, verify_password
 from app.session import create_session
 from app.session import get_session as get_db_session
+from app.web.routes import (
+    NotAuthenticated,
+    login_page,
+    not_authenticated_handler,
+    safe_next,
+)
+from app.web.routes import router as pages_router
+
+BASE_DIR = Path(__file__).resolve().parent
 
 SECRET_KEY = "<<<CHANGE_ME>>>"
 
@@ -57,6 +69,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.state.engine = engine
     application.state.session_factory = create_session_factory(engine)
 
+    # --- Static assets and Jinja2 pages (phase 4) ---
+    application.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
+    application.state.templates = Jinja2Templates(directory=BASE_DIR / "templates")
+    application.add_exception_handler(NotAuthenticated, not_authenticated_handler)
+
     # --- Session middleware (signed cookie, backed by DB) ---
     application.add_middleware(
         SessionMiddleware,
@@ -78,64 +95,98 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # --- Project settings (section 10) ---
     application.include_router(projects_router)
 
+    # --- Server-rendered pages (phase 4) ---
+    application.include_router(pages_router)
+
     @application.post("/session", status_code=201)
     def login(
         response: Response,
         request: Request,
         form: OAuth2PasswordRequestForm = Depends(),
-    ) -> dict[str, Any]:
+    ) -> Any:
         """Login and create a session.
 
         Validates username/password with argon2id, creates a session cookie,
         and returns user info. Rate limiting is applied at the middleware/edge.
+
+        One handler serves both clients: an API call gets JSON (201), while a
+        browser form post (``Accept: text/html``) gets a 303 redirect - or the
+        login page again with the error. The credentials, rate limiter and
+        audit trail are shared; there is no second login path.
         """
         engine = application.state.engine
         client_ip = request.client.host if request.client else "unknown"
+        wants_html = "text/html" in request.headers.get("accept", "")
+        next_url = safe_next(request.query_params.get("next"))
 
-        # Rate limiting: check if locked out
-        lockout_remaining = rate_limiter.is_locked_out(form.username, client_ip)
-        if lockout_remaining is not None:
-            raise HTTPException(
-                status_code=429,
-                detail=f"Too many failed attempts. Try again in {int(lockout_remaining)} seconds.",
+        try:
+            # Rate limiting: check if locked out
+            lockout_remaining = rate_limiter.is_locked_out(form.username, client_ip)
+            if lockout_remaining is not None:
+                raise HTTPException(
+                    status_code=429,
+                    detail=(
+                        f"Too many failed attempts. Try again in {int(lockout_remaining)} seconds."
+                    ),
+                )
+
+            # Look up user by username - we'll do a simple query
+            with engine.begin() as conn:
+                result = conn.execute(
+                    text(
+                        "SELECT id, username, password_hash, is_active FROM users "
+                        "WHERE username = :name"
+                    ),
+                    {"name": form.username},
+                ).first()
+
+            if not result:
+                # Record failure even for unknown users to prevent user enumeration timing
+                rate_limiter.record_failure(form.username, client_ip)
+                raise HTTPException(status_code=401, detail="Invalid credentials")
+            user_id, username, stored_hash, is_active = result
+            if not is_active:
+                rate_limiter.record_failure(form.username, client_ip)
+                raise HTTPException(status_code=401, detail="User account is disabled")
+
+            if not verify_password(form.password, stored_hash):
+                rate_limiter.record_failure(form.username, client_ip)
+                raise HTTPException(status_code=401, detail="Invalid credentials")
+
+            # Record success and clear rate limit
+            rate_limiter.record_success(form.username, client_ip)
+            write_audit(
+                engine,
+                action="login",
+                actor_id=user_id,
+                target_type="user",
+                target_id=user_id,
+                ip=client_ip,
             )
 
-        # Look up user by username - we'll do a simple query
-        with engine.begin() as conn:
-            result = conn.execute(
-                text(
-                    "SELECT id, username, password_hash, is_active FROM users "
-                    "WHERE username = :name"
-                ),
-                {"name": form.username},
-            ).first()
+            # Create session
+            session_token = create_session(engine, user_id)
+        except HTTPException as exc:
+            if wants_html:
+                return login_page(
+                    request,
+                    next_url=next_url,
+                    error=str(exc.detail),
+                    status_code=exc.status_code,
+                )
+            raise
 
-        if not result:
-            # Record failure even for unknown users to prevent user enumeration timing
-            rate_limiter.record_failure(form.username, client_ip)
-            raise HTTPException(status_code=401, detail="Invalid credentials")
-        user_id, username, stored_hash, is_active = result
-        if not is_active:
-            rate_limiter.record_failure(form.username, client_ip)
-            raise HTTPException(status_code=401, detail="User account is disabled")
-
-        if not verify_password(form.password, stored_hash):
-            rate_limiter.record_failure(form.username, client_ip)
-            raise HTTPException(status_code=401, detail="Invalid credentials")
-
-        # Record success and clear rate limit
-        rate_limiter.record_success(form.username, client_ip)
-        write_audit(
-            engine,
-            action="login",
-            actor_id=user_id,
-            target_type="user",
-            target_id=user_id,
-            ip=client_ip,
-        )
-
-        # Create session
-        session_token = create_session(engine, user_id)
+        if wants_html:
+            redirect_response = RedirectResponse(url=next_url, status_code=303)
+            redirect_response.set_cookie(
+                key="wadjet_session",
+                value=session_token,
+                httponly=True,
+                secure=resolved.cookie_secure,
+                samesite="lax",
+                max_age=7 * 24 * 3600,  # 7 days
+            )
+            return redirect_response
 
         # Set cookie
         response.set_cookie(
@@ -150,8 +201,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"user_id": user_id, "username": username, "is_admin": False}
 
     @application.post("/session/logout")
-    def logout(request: Request, response: Response) -> dict[str, Any]:
+    def logout(request: Request, response: Response) -> Any:
         """Logout and revoke the current session."""
+        wants_html = "text/html" in request.headers.get("accept", "")
         # Read session token from cookie
         token = request.cookies.get("wadjet_session")
         actor_id = None
@@ -168,6 +220,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             target_id=actor_id,
             ip=request.client.host if request.client else None,
         )
+        if wants_html:
+            redirect_response = RedirectResponse(url="/login", status_code=303)
+            redirect_response.delete_cookie("wadjet_session")
+            return redirect_response
         response.delete_cookie("wadjet_session")
         return {"detail": "logged out"}
 

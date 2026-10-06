@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>{% block title %}Wadjet{% endblock %}</title>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/static/css/wadjet.css">
+<script>
+/* Adopt an explicit theme choice before first paint; otherwise the system decides. */
+try{var t=localStorage.getItem("wadjet-theme");if(t==="dark"||t==="light"){document.documentElement.setAttribute("data-theme",t)}}catch(e){}
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+{% include "sprite.html" %}
+{% if user %}
+<header class="topbar">
+  <a class="brand" href="/"><svg aria-hidden="true"><use href="#lg"/></svg><b>Wadjet</b></a>
+  <nav aria-label="Main">
+    <a href="/projects"{% if nav == "projects" %} class="on" aria-current="page"{% endif %}>Projects</a>
+    <a href="/gates"{% if nav == "gates" %} class="on" aria-current="page"{% endif %}>Gates</a>
+    <a href="/inbox"{% if nav == "inbox" %} class="on" aria-current="page"{% endif %}>Inbox</a>
+    {% if user.is_admin %}<a href="/admin"{% if nav == "admin" %} class="on" aria-current="page"{% endif %}>Admin</a>{% endif %}
+  </nav>
+  <div class="end">
+    <span class="m mu">{{ user.display_name or user.username }}</span>
+    <button class="b" id="theme-toggle" type="button" aria-label="Switch between light and dark theme">Theme</button>
+    <form method="post" action="/session/logout">
+      <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+      <button class="b" type="submit">Log out</button>
+    </form>
+  </div>
+</header>
+{% endif %}
+<main id="main" class="wrap">
+{% block content %}{% endblock %}
+</main>
+<script>
+(function(){var b=document.getElementById("theme-toggle");if(!b)return;
+function dark(){var t=null;try{t=localStorage.getItem("wadjet-theme")}catch(e){}
+if(t){return t==="dark"}return window.matchMedia("(prefers-color-scheme: dark)").matches}
+function label(){b.textContent=dark()?"Light theme":"Dark theme"}label();
+b.addEventListener("click",function(){var next=dark()?"light":"dark";
+document.documentElement.setAttribute("data-theme",next);
+try{localStorage.setItem("wadjet-theme",next)}catch(e){}label()})})();
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

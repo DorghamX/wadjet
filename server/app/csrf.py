@@ -2,8 +2,9 @@
 
 A CSRF token on every state-changing form and HTMX request, using the
 double-submit-cookie pattern: the server sets a readable ``wadjet_csrf``
-cookie, the client echoes it back in the ``X-CSRF-Token`` header, and unsafe
-requests are rejected when the two do not match.
+cookie, the client echoes it back in the ``X-CSRF-Token`` header (HTMX and
+JavaScript) or in a hidden ``csrf_token`` form field (plain HTML forms),
+and unsafe requests are rejected when the two do not match.
 
 Requests that carry no cookies at all (API clients using ``Authorization``,
 health checks) are not subject to the check: a cross-site attacker cannot
@@ -46,13 +47,18 @@ class CsrfMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         csrf_cookie = request.cookies.get(CSRF_COOKIE)
+        # Expose the token to server-rendered forms (base.html, login.html).
+        if csrf_cookie:
+            request.state.csrf_token = csrf_cookie
 
         if request.method in SAFE_METHODS:
+            token = csrf_cookie or secrets.token_urlsafe(32)
+            request.state.csrf_token = token
             response = await call_next(request)
             if not csrf_cookie:
                 response.set_cookie(
                     CSRF_COOKIE,
-                    secrets.token_urlsafe(32),
+                    token,
                     httponly=False,  # the page and HTMX must read it
                     secure=self.secure,
                     samesite="lax",
@@ -70,6 +76,15 @@ class CsrfMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         supplied = request.headers.get(CSRF_HEADER)
+        if not supplied and _is_form_content_type(request):
+            # HTML forms cannot set headers: the double-submit value travels
+            # in a hidden field instead (same cookie, same comparison).
+            # Read the body first so the cached copy replays downstream.
+            await request.body()
+            form = await request.form()
+            field = form.get("csrf_token")
+            if isinstance(field, str):
+                supplied = field
         if not supplied or not csrf_cookie or not secrets.compare_digest(supplied, csrf_cookie):
             return JSONResponse(
                 status_code=403,
@@ -77,3 +92,10 @@ class CsrfMiddleware(BaseHTTPMiddleware):
             )
 
         return await call_next(request)
+
+
+def _is_form_content_type(request: Request) -> bool:
+    """True for the content types whose body carries named fields."""
+    content_type = request.headers.get("content-type", "")
+    media_type = content_type.split(";", 1)[0].strip().lower()
+    return media_type in {"application/x-www-form-urlencoded", "multipart/form-data"}

@@ -475,3 +475,47 @@ Format: date, task, decision, reason.
   T4.4 defines assignment first. Notifications have no table until T5.2,
   which extends the seed. Seeded secret findings carry an empty snippet
   like every other ingest path (the T3.3 rule).
+- **T4.1 - The design's own CSS is the stylesheet; no Tailwind.** The
+  guide's stack line mentions Tailwind, but `wadjet-design.html` ships a
+  complete component vocabulary (`.win`, `.t`, `.b`, `.k`, `.sv`, `.c`,
+  tokens on `:root`) and the instruction for phase 4 is "match
+  wadjet-design.html". `static/css/wadjet.css` is that CSS verbatim plus
+  an "app shell" section (top bar, skip link, auth card): no build step,
+  no toolchain, and what ships is what was designed. HTMX arrives with
+  T4.3 (filters), vendored then.
+- **T4.1 - Brand assets are generated from the `#lg`/`#wm` symbols.**
+  Three files produced mechanically from the design's sprite:
+  `static/brand/mark.svg` (the eye, light-theme hex literals),
+  `static/brand/wadjet.svg` (mark + wordmark, `viewBox="16 26 963 259"`),
+  `static/favicon.svg`. The app chrome inlines the original sprite
+  (`templates/sprite.html`) so the paths keep their `var(--...)` fills and
+  the navy lightens on dark exactly as the design says; standalone files
+  cannot resolve CSS variables, hence literal hex there.
+- **T4.1 - One login endpoint, two dialects.** `POST /session` remains
+  the only credential check (same rate limiter, same audit, same argon2
+  verify); a browser form post (`Accept: text/html`) gets a 303 to the
+  local `next` path, or the login page re-rendered with the error, while
+  API clients keep 201/401/429 JSON untouched. `next` travels in the form
+  action's query string (readable synchronously in the sync handler) and
+  is filtered by `safe_next` - local paths only, no open redirect.
+  Likewise `POST /session/logout` redirects HTML clients to `/login`.
+- **T4.1 - CSRF doubles up for forms: header OR hidden field.** The
+  double-submit contract is unchanged; `CsrfMiddleware` now also accepts
+  the token from a `csrf_token` form field, because HTML forms cannot set
+  headers. Two details that matter: the body is read with `request.body()`
+  *before* `request.form()` so Starlette's `_CachedRequest` replays the
+  cached body downstream (otherwise the login route sees an empty form and
+  answers 422), and the token is published to templates through
+  `request.state.csrf_token`, which the middleware shares via the ASGI
+  scope - the cookie exists before the first render, so the very first
+  login page already carries a valid hidden field.
+- **T4.1 - Page auth redirects, API auth 401s.** `get_current_user`
+  stays as it is; pages depend on `require_page_user`, which raises
+  `NotAuthenticated(next_url)` to a registered handler that answers 303
+  `/login?next=...`. The nav is permission-aware in the template
+  (`Admin` only for `is_admin`), autoescaping is on everywhere (the test
+  logs in with a `<script>` display name and asserts the escaped form),
+  and the theme is system-first with an explicit `data-theme` choice in
+  localStorage (two inline scripts, no FOUC, no server state). The top
+  bar renders all four design links now; `/inbox` and `/admin` fill in
+  with T4.7/T5.2, and `/` is a brand-hero stub until T4.2's list.

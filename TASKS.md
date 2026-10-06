@@ -33,7 +33,7 @@ code, tests and one docs line exist, `make lint test` is green and the commit me
 - [x] **T3.5 (S)** Scanner failure policy: incomplete analysis and synthetic gate condition
 
 ## Phase 4: Web UI
-- [ ] **T4.0 (S)** seed-demo
+- [x] **T4.0 (S)** seed-demo
 - [ ] **T4.1 (M)** Base layout, theme tokens, light/dark, brand assets, login
 - [ ] **T4.2 (M)** Projects list and overview
 - [ ] **T4.3 (M)** Issues list with HTMX filters

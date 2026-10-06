@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Sign in &middot; Wadjet{% endblock %}
+{% block content %}
+<div class="auth">
+  <div class="auth-brand">
+    <svg role="img" aria-label="Wadjet"><use href="#lg"/></svg>
+    <div><h1>Wadjet</h1><p class="mu">Quality gates for Python.</p></div>
+  </div>
+  {% if error %}<div class="ban" role="alert"><b>Sign-in failed.</b> {{ error }}</div>{% endif %}
+  <form method="post" action="/session?next={{ next_url | urlencode }}">
+    <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+    <label for="username">Username</label>
+    <input class="f" id="username" name="username" autocomplete="username" required autofocus>
+    <label for="password">Password</label>
+    <input class="f" id="password" name="password" type="password" autocomplete="current-password" required>
+    <button class="b p" type="submit">Sign in</button>
+  </form>
+</div>
+{% endblock %}
