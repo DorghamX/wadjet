@@ -20,6 +20,11 @@ cached under ``~/.cache/wadjet/``): pip-audit's ``-r`` mode builds its own
 virtualenv, which needs ``ensurepip`` - unavailable on this host without
 sudo, while the agent's active-environment mode needs nothing special.
 
+Coverage (T3.1) travels throughout: the sample deliberately ships no report,
+so every sample analysis must fail the coverage condition with reason
+"no coverage report", while the clean project supplies ``coverage.json`` and
+its metrics (overall and per file) must reach the stored analysis.
+
 Everything runs inside one unique schema that is dropped afterwards, so the
 check never touches real data and can run while other suites use the database.
 """
@@ -141,6 +146,10 @@ def set_settings(
                 "dependency_files": dependency_files or [],
                 "dependency_default_severity": "high",
             },
+            # The sample carries no coverage report (its "test step" never
+            # ran): the coverage condition must fail with its reason. The
+            # clean project below supplies one.
+            "coverage": {"report_path": "coverage.json"},
         }
     }
     with engine.begin() as conn:
@@ -207,6 +216,20 @@ def last_analysis(engine: Engine, project_id: int) -> dict:
         ).first()
     check(row is not None, "no analysis was stored")
     return {"status": row[0], "gate_status": row[1]}
+
+
+def last_analysis_details(engine: Engine, project_id: int) -> dict:
+    """``gate_details`` and ``metrics`` of the most recent analysis."""
+    with engine.begin() as conn:
+        row = conn.execute(
+            text(
+                "SELECT gate_details, metrics FROM analyses "
+                "WHERE project_id = :pid ORDER BY id DESC LIMIT 1"
+            ),
+            {"pid": project_id},
+        ).first()
+    check(row is not None, "no analysis was stored")
+    return {"gate_details": row[0] or {}, "metrics": row[1] or {}}
 
 
 def scan(
@@ -397,6 +420,24 @@ def main() -> int:
             f"baseline analysis wrong: {analysis}",
             output,
         )
+        # The sample has no coverage report: the gate's coverage condition
+        # must fail closed with its reason (section 6 coverage row).
+        details = last_analysis_details(engine, project_id)
+        coverage_condition = next(
+            (
+                condition
+                for condition in details["gate_details"]["conditions"]
+                if condition["metric"] == "coverage_line_percent"
+            ),
+            None,
+        )
+        require(
+            coverage_condition is not None
+            and coverage_condition["triggered"] is True
+            and coverage_condition.get("reason") == "no coverage report",
+            f"coverage condition should carry the missing-report reason: {coverage_condition}",
+            output,
+        )
 
         target = next(i for i in issues if i["rule_id"] == "B105")
         flagged_id, flagged_line = target["id"], target["line_start"]
@@ -515,10 +556,31 @@ def main() -> int:
         clean = tmp / "clean_app"
         clean.mkdir()
         (clean / "clean.py").write_text("def add(a, b):\n    return a + b\n")
+        # The clean project's "test step" ran: a full coverage report, so the
+        # default gate's coverage condition has a value to judge.
+        (clean / "coverage.json").write_text(
+            json.dumps(
+                {
+                    "files": {"clean.py": {"summary": {"percent_covered": 100.0}}},
+                    "totals": {"percent_covered": 100.0},
+                }
+            )
+        )
         scan("clean", clean, base_url=server_base, token=token, expected=0, output=output)
         require(
             last_analysis(engine, project_id) == {"status": "complete", "gate_status": "passed"},
             "the clean analysis should have passed the gate",
+            output,
+        )
+        clean_metrics = last_analysis_details(engine, project_id)["metrics"]
+        require(
+            clean_metrics.get("coverage_line_percent") == 100.0,
+            f"coverage metric missing from the stored analysis: {clean_metrics}",
+            output,
+        )
+        require(
+            clean_metrics.get("coverage_file_percent:clean.py") == 100.0,
+            f"per-file coverage metric missing: {clean_metrics}",
             output,
         )
 

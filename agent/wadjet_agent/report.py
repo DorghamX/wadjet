@@ -51,6 +51,10 @@ def print_summary(
     for tool in sorted(tool_counts):
         out(f"  {tool:<10} {tool_counts[tool]:>9}")
     out("")
+    coverage = upload.metrics.get("coverage_line_percent")
+    if isinstance(coverage, (int, float)):
+        out(f"  coverage: {coverage:.1f}%")
+        out("")
     out(f"  created {result.issues_created} new issue(s), resolved {result.issues_resolved}")
     out("")
 
@@ -66,7 +70,11 @@ def print_summary(
             operator = condition.get("operator")
             threshold = condition.get("threshold")
             actual = condition.get("actual")
-            out(f"    fail when {metric} {operator} {threshold} (actual: {actual})")
+            reason = condition.get("reason")
+            if reason:
+                out(f"    fail when {metric} {operator} {threshold} ({reason})")
+            else:
+                out(f"    fail when {metric} {operator} {threshold} (actual: {actual})")
     out("")
     out(f"  {dashboard_url(base_url, upload.project_key)}")
     out("")

@@ -93,26 +93,38 @@ def _compare(actual: float, operator: str, threshold: float) -> bool:
 def evaluate_conditions(
     conditions: list[dict[str, Any]], metrics: dict[str, float]
 ) -> list[dict[str, Any]]:
-    """Evaluate every condition, one detail row each (section 9)."""
+    """Evaluate every condition, one detail row each (section 9).
+
+    Two special cases, both fail-closed:
+
+    - ``coverage_line_percent`` with no report in the upload triggers with
+      ``reason: "no coverage report"`` (section 6 coverage row) - a gate that
+      asks for coverage must see a report, otherwise \"no data\" would read as
+      green.
+    - Any other metric this analysis does not produce shows as null and does
+      not trigger (the UI gate builder only offers the section 9 list, so an
+      absent name is a stale copy, not a promise to enforce).
+    """
     details: list[dict[str, Any]] = []
     for condition in conditions:
         metric = str(condition["metric"])
         operator = str(condition["operator"])
         threshold = float(condition["threshold"])
         actual = metrics.get(metric)
-        # A metric the analysis does not produce cannot be judged: it shows
-        # as null and does not trigger (the UI gate builder only offers the
-        # metric list of section 9).
-        triggered = False if actual is None else _compare(actual, operator, threshold)
-        details.append(
-            {
-                "metric": metric,
-                "operator": operator,
-                "threshold": threshold,
-                "actual": actual,
-                "triggered": triggered,
-            }
-        )
+        if actual is None:
+            triggered = metric == "coverage_line_percent"
+        else:
+            triggered = _compare(actual, operator, threshold)
+        detail: dict[str, Any] = {
+            "metric": metric,
+            "operator": operator,
+            "threshold": threshold,
+            "actual": actual,
+            "triggered": triggered,
+        }
+        if triggered and actual is None:
+            detail["reason"] = "no coverage report"
+        details.append(detail)
     return details
 
 

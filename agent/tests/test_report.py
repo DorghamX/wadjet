@@ -124,3 +124,33 @@ def test_write_report_round_trips(tmp_path: Path) -> None:
     assert payload["dashboard_url"] == "https://wadjet.example/projects/demo"
     assert len(payload["findings"]) == 3
     assert payload["findings"][0]["severity"] == "critical"
+
+
+def test_print_summary_shows_coverage_and_condition_reason() -> None:
+    """T3.1: the coverage metric line, and the gate's "no coverage report"
+    reason instead of a bare (actual: None)."""
+    upload = make_upload().model_copy(update={"metrics": {"coverage_line_percent": 91.4}})
+    result = AnalysisResult(
+        analysis_id="9",
+        gate_status="failed",
+        gate_details={
+            "conditions": [
+                {
+                    "metric": "coverage_line_percent",
+                    "operator": "<",
+                    "threshold": 70.0,
+                    "actual": None,
+                    "triggered": True,
+                    "reason": "no coverage report",
+                }
+            ]
+        },
+        issues_resolved=0,
+        issues_created=0,
+    )
+    lines: list[str] = []
+    print_summary(upload, result, "https://x", out=lines.append)
+    text = "\n".join(lines)
+    assert "coverage: 91.4%" in text
+    assert "fail when coverage_line_percent < 70.0 (no coverage report)" in text
+    assert "actual: None" not in text

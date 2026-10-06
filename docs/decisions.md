@@ -263,3 +263,33 @@ Format: date, task, decision, reason.
   the vulnerabilities the acceptance checks depend on. The e2e always mutates
   a temp copy, so the committed sample never changes - verified by two
   consecutive green runs.
+- **T3.1 - Coverage is a metrics producer, not a scanner.** The agent parses
+  the report named by `scanners.coverage.report_path` (relative to the repo
+  root) in `wadjet_agent/coverage_report.py` and emits metrics only: no
+  `scanner_runs` entry, so a missing or broken report can never make the
+  analysis incomplete or change the exit code - agent-side it warns, and the
+  verdict belongs to the gate. `doctor` shows the report's status
+  informationally (it never flips the exit code, because the report comes from
+  the *project's* test step), and `--dry-run` prints the configured path.
+- **T3.1 - Gate rule: a coverage condition with no report triggers with
+  `reason: "no coverage report"`** (section 6 coverage row). "No data must not
+  read as green": the built-in default gate therefore fails any analysis that
+  uploads no coverage metric, visibly and with the reason spelled out. Every
+  other unproduced metric keeps the T2.4 behaviour (null, not triggered) -
+  only `coverage_line_percent` is a documented promise the gate can demand.
+  This changed `test_first_upload_creates_analysis_and_issues`, which now
+  supplies a clean report (100%) the way a real test step would.
+- **T3.1 - Parsing needs no coverage.py installation.** `coverage.json` is
+  read from `totals.percent_covered` plus per-file `summary.percent_covered`;
+  Cobertura XML uses the exact `lines-covered`/`lines-valid` counts on the
+  root (the `line-rate` attribute is rounded to 4 decimals) and aggregates
+  per-file percentages from each `<class>` element's `<line hits=...>`
+  entries, because coverage.py splits one file into several classes.
+  Key scheme: `coverage_line_percent` (the section 9 gate metric) and
+  `coverage_file_percent:<path>` per file - display/export data the gate
+  builder never offers.
+- **T3.1 - The e2e covers both sides of the rule:** the sample project ships
+  no report on purpose, so every sample analysis must carry the
+  `reason: "no coverage report"` condition, while the clean project (exit-0
+  scenario) writes a `coverage.json` at 100% and the stored analysis must
+  contain the overall and per-file metrics.

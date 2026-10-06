@@ -17,6 +17,7 @@ from wadjet_schema import AgentConfig, AnalysisUpload, Finding, filter_findings
 from .adapters import ADAPTERS, Adapter, RunContext, enabled_adapters
 from .ci import collect_ci_info, git_commit
 from .client import AgentError, fetch_config, upload_analysis
+from .coverage_report import collect_coverage_metrics, configured_report
 from .report import print_summary, write_report
 
 EXIT_OK = 0
@@ -100,6 +101,8 @@ def print_plan(
         )
     else:
         out("  gate          : (no conditions)")
+    coverage_report = configured_report(ctx)
+    out(f"  coverage      : {coverage_report or '(not configured)'}")
     out("")
     for adapter in adapters:
         info = adapter.info()
@@ -136,6 +139,13 @@ def run_scan(
     # Defense in depth: post-filter exclusions before the server's own pass.
     kept, _excluded = filter_findings(findings, ctx.exclusion_globs)
 
+    # The coverage report is produced by the project's own test step: metrics
+    # only, and a broken report warns instead of failing the run (the gate's
+    # coverage condition carries the verdict - section 6 coverage row).
+    coverage_metrics, coverage_warning = collect_coverage_metrics(ctx)
+    if coverage_warning:
+        print(f"warning: {coverage_warning}")
+
     commit_sha, ci_url = collect_ci_info(environ)
     if commit_sha is None:
         commit_sha = git_commit(repo_root)
@@ -145,7 +155,7 @@ def run_scan(
         commit_sha=commit_sha,
         ci_url=ci_url,
         findings=kept,
-        metrics={},
+        metrics=coverage_metrics,
         scanner_runs=runs,
     )
     result = upload_analysis(base_url, token, upload)
@@ -186,6 +196,19 @@ def doctor(env: Mapping[str, str] | None = None, out: Callable[[str], None] = pr
             out(f"  server: ERROR - {exc}")
         else:
             out(f"  server: OK - project {config.project_key!r} at {base_url}")
+            # The coverage report belongs to the project's test step, so this
+            # line is informational: it never changes the exit code.
+            ctx = build_context(config, Path.cwd())
+            report_path = configured_report(ctx)
+            if report_path is None:
+                out("  coverage      : report not configured")
+            else:
+                coverage_metrics, warning = collect_coverage_metrics(ctx)
+                if warning is not None:
+                    out(f"  coverage      : WARNING - {warning}")
+                else:
+                    percent = coverage_metrics["coverage_line_percent"]
+                    out(f"  coverage      : {report_path} -> {percent:.1f}%")
     else:
         out("  server: skipped (WADJET_URL/WADJET_TOKEN not set)")
     out("")

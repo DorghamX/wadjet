@@ -168,6 +168,53 @@ def test_dry_run_prints_the_plan_and_never_uploads(
     assert "Would scan project 'demo'" in out
     assert "stub" in out
     assert "exclusions" in out
+    assert "coverage      : (not configured)" in out
+
+
+# --- coverage report (T3.1) --------------------------------------------------
+
+
+def test_coverage_metrics_reach_the_upload(
+    monkeypatch: pytest.MonkeyPatch,
+    uploads: list[Any],
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    (tmp_path / "coverage.json").write_text(
+        json.dumps(
+            {
+                "files": {"app.py": {"summary": {"percent_covered": 87.5}}},
+                "totals": {"percent_covered": 87.5},
+            }
+        )
+    )
+    config = make_config(settings={"scanners": {"coverage": {"report_path": "coverage.json"}}})
+    patch_config(monkeypatch, config)
+    patch_adapters(monkeypatch, StubAdapter())
+
+    assert run_scan(tmp_path, env=ENV) == EXIT_OK
+    assert uploads[0].metrics["coverage_line_percent"] == 87.5
+    out = capsys.readouterr().out
+    assert "coverage: 87.5%" in out
+    assert "warning" not in out
+
+
+def test_missing_coverage_report_warns_without_failing(
+    monkeypatch: pytest.MonkeyPatch,
+    uploads: list[Any],
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A report the test step never produced is the gate's problem, not an
+    error: the analysis stays complete and the exit code unaffected."""
+    config = make_config(settings={"scanners": {"coverage": {"report_path": "cov.xml"}}})
+    patch_config(monkeypatch, config)
+    patch_adapters(monkeypatch, StubAdapter())
+
+    assert run_scan(tmp_path, env=ENV) == EXIT_OK
+    assert uploads[0].metrics == {}
+    out = capsys.readouterr().out
+    assert "warning: coverage report not found: cov.xml" in out
 
 
 # --- full run ---------------------------------------------------------------
@@ -306,3 +353,19 @@ def test_doctor_reports_a_server_problem(monkeypatch: pytest.MonkeyPatch) -> Non
 
     monkeypatch.setattr(scan_module, "fetch_config", fail)
     assert doctor(env=dict(ENV), out=lambda _line: None) == EXIT_CONFIG
+
+
+def test_doctor_shows_coverage_status_informationally(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Coverage is owned by the project's test step: doctor reports it but a
+    missing report never changes the exit code."""
+    monkeypatch.setattr(scan_module, "ADAPTERS", {"stub": StubAdapter()})
+    patch_config(
+        monkeypatch,
+        make_config(settings={"scanners": {"coverage": {"report_path": "cov-report.xml"}}}),
+    )
+    code = doctor(env=dict(ENV), out=print)
+    out = capsys.readouterr().out
+    assert code == EXIT_OK
+    assert "WARNING - coverage report not found: cov-report.xml" in out

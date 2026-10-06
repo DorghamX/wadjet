@@ -242,12 +242,14 @@ def test_first_upload_creates_analysis_and_issues(
     project_token: str,
 ) -> None:
     project_id, key = ingest_project
-    payload = make_upload(key, [make_finding()])
+    # The default gate's coverage condition needs a report; the project's own
+    # test step supplies one, and a clean report keeps the gate green.
+    payload = make_upload(key, [make_finding()], metrics={"coverage_line_percent": 100.0})
     response = upload(client, project_token, payload)
     assert response.status_code == 201
 
     result = AnalysisResult.model_validate(response.json())
-    assert result.gate_status == "passed"  # no conditions attached yet
+    assert result.gate_status == "passed"
     assert result.issues_created == 1
     assert result.issues_resolved == 0
     assert int(result.analysis_id) > 0
@@ -579,6 +581,43 @@ def test_coverage_metric_reaches_the_gate(
 
     analysis = fetch_analysis(engine, body["analysis_id"])
     assert analysis["metrics"]["coverage_line_percent"] == 42.5
+
+
+def test_missing_coverage_report_fails_the_coverage_condition(
+    client: TestClient,
+    engine: Engine,
+    ingest_project: tuple[int, str],
+    project_token: str,
+) -> None:
+    """Section 6 coverage row: no report + coverage condition = trigger."""
+    project_id, key = ingest_project
+    attach_gate(engine, project_id, [("coverage_line_percent", "<", 70.0)])
+
+    response = upload(client, project_token, make_upload(key, [make_finding()]))
+    body = response.json()
+    assert body["gate_status"] == "failed"
+    condition = body["gate_details"]["conditions"][0]
+    assert condition["actual"] is None
+    assert condition["triggered"] is True
+    assert condition["reason"] == "no coverage report"
+
+
+def test_coverage_above_threshold_passes_the_condition(
+    client: TestClient,
+    engine: Engine,
+    ingest_project: tuple[int, str],
+    project_token: str,
+) -> None:
+    project_id, key = ingest_project
+    attach_gate(engine, project_id, [("coverage_line_percent", "<", 70.0)])
+
+    payload = make_upload(key, [], metrics={"coverage_line_percent": 95.5})
+    body = upload(client, project_token, payload).json()
+    assert body["gate_status"] == "passed"
+    condition = body["gate_details"]["conditions"][0]
+    assert condition["actual"] == 95.5
+    assert condition["triggered"] is False
+    assert "reason" not in condition
 
 
 def test_unknown_metric_shows_as_null_and_does_not_trigger(
