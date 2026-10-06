@@ -1,0 +1,94 @@
+# Family-level fallbacks for Ruff (section 6): description comes from
+# raw.explanation fetched at scan time; impact and fix come from here,
+# looked up by the leading family of the rule code.
+
+F:
+  title: Pyflakes finding
+  description: ""
+  impact: >
+    These are real defects rather than style: an undefined name raises at
+    runtime the first time that path executes, an unused import hides a
+    missing dependency, and a wrong exception branch swallows the error it
+    meant to report.
+  fix: >
+    Run `ruff check --fix` for the mechanical cases, then resolve what is
+    left by hand: import what you use, delete what you do not, and catch the
+    exception you actually meant to handle.
+  references:
+    - https://docs.astral.sh/ruff/rules/#pyflakes-f
+  cwe: null
+
+B:
+  title: Bugbear finding
+  description: ""
+  impact: >
+    Each of these flags code that misbehaves in a surprising way - a mutable
+    default shared by every call, a loop variable captured after the loop
+    ended, a bare except hiding the failure - so the bug surfaces far from
+    the line that caused it, often only under production load.
+  fix: >
+    Use `None` defaults and initialize inside the function, capture loop
+    variables explicitly at binding time, and catch the narrowest exception
+    you can actually handle.
+  references:
+    - https://docs.astral.sh/ruff/rules/#flake8-bugbear-b
+  cwe: null
+
+C90:
+  title: Complexity finding
+  description: ""
+  impact: >
+    Functions past the complexity limit have more paths than any test suite
+    covers and more paths than a reviewer can hold in mind, which is exactly
+    where the untested defect lives.
+  fix: >
+    Extract each decision into a small function named after what it
+    decides, or collapse nested conditions with early returns so the happy
+    path reads straight down.
+  references:
+    - https://docs.astral.sh/ruff/rules/#mccabe-c90
+  cwe: null
+
+PLE:
+  title: Pylint error
+  description: ""
+  impact: >
+    Pylint's error class covers mistakes with runtime consequences -
+    undefined attributes, wrong argument counts, unreachable code - so each
+    one is either a crash waiting for its trigger or a block of logic that
+    never runs.
+  fix: >
+    Fix the reported defect directly: correct the name or signature, delete
+    or repair the unreachable block, and re-run `ruff check` until it is
+    clean.
+  references:
+    - https://docs.astral.sh/ruff/rules/#pylint-errors-ple
+  cwe: null
+
+E:
+  title: Pycodestyle error
+  description: ""
+  impact: >
+    Mostly formatting, but a few of these hide intent problems - a line
+    continuation that reads differently from how it parses, or whitespace
+    that changes what the tokenizer sees.
+  fix: >
+    Run `ruff check --fix` and let it reformat; review the few cases it
+    cannot decide automatically.
+  references:
+    - https://docs.astral.sh/ruff/rules/#pycodestyle-e
+  cwe: null
+
+W:
+  title: Pycodestyle warning
+  description: ""
+  impact: >
+    Warnings here are about readability - trailing whitespace, blank lines
+    in the wrong place, mixed indentation - which costs review attention and
+    produces noisy diffs that hide the real change.
+  fix: >
+    Run `ruff check --fix`; these are mechanical and safe to apply
+    automatically.
+  references:
+    - https://docs.astral.sh/ruff/rules/#pycodestyle-w
+  cwe: null

@@ -69,3 +69,46 @@ Format: date, task, decision, reason.
 - **T1.4 — `audit_log.target_id` is a string.** The guide does not type it, and targets
   span users, projects, gates and issues; one varchar keeps a single writer function.
   `actor_id` stays a nullable FK to `users` so anonymous events (failed logins) fit.
+- **T2.1 — JSONB columns are real `JSONB`, not text.** `analyses.scanner_runs`,
+  `analyses.metrics`, `analyses.gate_details`, `issues.fixed_versions`,
+  `issues.references` and `issue_events.payload` use the Postgres JSONB type; the
+  database is PostgreSQL only (section 15.1), so portability buys nothing.
+- **T2.1 — `issues` is unique on (project_id, fingerprint).** Section 5 makes one
+  persistent issue per fingerprint per project; the constraint keeps the matcher's
+  rule 1 honest instead of trusting application code alone.
+- **T2.2 — The flagged/context split inside a snippet is derived from line numbers.**
+  The agent builds a snippet as up to 3 context lines above, the flagged lines
+  (`line_start..line_end`), then up to 3 below (section 5.1), so
+  `split_snippet()` reverses that convention; a snippet that does not follow it is
+  treated as entirely flagged. The agent (T2.6) must build snippets exactly so.
+- **T2.2 — On a same-lines or moved match the stored issue adopts the new
+  fingerprint, path, lines and snippet.** The guide says "update context hash and
+  line numbers"; adopting the incoming fingerprint keeps the unique constraint and
+  rule 1 working on the next upload. Triage and presence are never touched by a
+  match - only by a human flag or by resolution/reopen.
+- **T2.2 — Rules are applied as whole-upload passes, not per-finding in input
+  order:** all exact hits first, then all same-lines, then all moves. Each existing
+  issue is claimed at most once; candidates are claimed in id order, incoming in
+  upload order, so the result is deterministic.
+- **T2.2 — An incomplete analysis still ingests what arrived (matches, new
+  sightings, reopened issues) but never resolves anything** (section 5.4).
+- **T2.3 — The Bandit KB covers the full bandit 1.9.4 registry: 75 test IDs
+  (B101..B704).** The guide says "B101 to B703"; current bandit adds B704, so the
+  KB is a superset of what the guide names. The completeness test freezes the
+  registry in the test file (bandit itself is not a server dependency, so CI stays
+  deterministic) and additionally cross-checks against an installed bandit when one
+  is importable - dev machines catch drift immediately.
+- **T2.3 — pip-audit enrichment is computed, not tabulated.** Advisory text becomes
+  the description, impact is generic by vulnerability, fix text is built from
+  `fixed_versions` ("Upgrade `pkg` to `v`" / "No fixed version published yet..."),
+  and CVE identifiers gain an NVD reference. A static file could not track an
+  advisory database.
+- **T2.3 — `ruff.yml` is keyed by family, longest prefix first** (C90 before C,
+  PLE before E), because Ruff rule explanations arrive per-rule at scan time
+  (`raw.explanation`) while impact/fix are the parts that are stable per family.
+- **T2.3 — `_fallback.yml` leaves `description` empty on purpose** so the scanner's
+  own message survives for unknown rules; impact and fix carry the generic
+  guidance. The loader merges: KB text wins where present, scanner text fills gaps,
+  and the KB's CWE wins over the scanner's when the KB has one.
+- **T2.3 — PyYAML became a server dependency** (guide's KB files are YAML), with
+  `types-PyYAML` in the server dev extra for mypy.
