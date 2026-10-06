@@ -11,7 +11,7 @@ code, tests and one docs line exist, `make lint test` is green and the commit me
 - [x] **T0.4 (S)** Freeze `wadjet_schema` contract + OpenAPI skeleton
 
 ## Phase 1: Identity and access
-- [ ] **T1.1 (M)** Users, sessions, login/logout, argon2id, CSRF, rate limit, create-admin
+- [x] **T1.1 (M)** Users, sessions, login/logout, argon2id, CSRF, rate limit, create-admin
 - [ ] **T1.2 (M)** Groups, projects, grants, permission templates, `can()`
 - [ ] **T1.3 (S)** Project tokens and token auth dependency
 - [ ] **T1.4 (M)** Audit log writer + exhaustive permission matrix test
