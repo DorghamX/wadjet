@@ -1,5 +1,23 @@
-"""Shared contract between the Wadjet server and the Wadjet agent."""
+"""wadjet_schema - Shared contract between the Wadjet server and the Wadjet agent."""
 
-__all__ = ["__version__"]
+from .models import (
+    FINGERPRINT_CODE,
+    FINGERPRINT_DEP,
+    AgentConfig,
+    AnalysisResult,
+    AnalysisUpload,
+    Category,
+    Finding,
+    Severity,
+)
 
-__version__ = "0.1.0"
+__all__ = [
+    "Finding",
+    "Severity",
+    "Category",
+    "AnalysisUpload",
+    "AnalysisResult",
+    "AgentConfig",
+    "FINGERPRINT_CODE",
+    "FINGERPRINT_DEP",
+]

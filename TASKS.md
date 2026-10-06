@@ -7,8 +7,8 @@ code, tests and one docs line exist, `make lint test` is green and the commit me
 ## Phase 0: Foundations
 - [ ] **T0.1 (S)** Repository skeleton, pyprojects, Makefile, ruff, mypy, pytest, CI with PostgreSQL service
 - [x] **T0.2 (M)** Config, engine, wait-for-database, advisory-lock migrations, check-db, healthcheck, /healthz, Alembic, password redaction
-- [ ] **T0.3 (S)** Dockerfile.server, Dockerfile.agent, docker-compose.yml, .env.example + compose test
-- [ ] **T0.4 (S)** Freeze `wadjet_schema` contract + OpenAPI skeleton
+- [x] **T0.3 (S)** Dockerfile.server, Dockerfile.agent, docker-compose.yml, .env.example + compose test
+- [x] **T0.4 (S)** Freeze `wadjet_schema` contract + OpenAPI skeleton
 
 ## Phase 1: Identity and access
 - [ ] **T1.1 (M)** Users, sessions, login/logout, argon2id, CSRF, rate limit, create-admin

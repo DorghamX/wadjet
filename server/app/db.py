@@ -8,12 +8,16 @@ from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from contextlib import contextmanager
+from typing import Any
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import Settings
+from app.session import expire_sessions_for_user as _expire_sessions_for_user_db
+from app.session import get_session as _get_session_db
+from app.session import revoke_session as _revoke_session_db
 
 log = logging.getLogger("wadjet.db")
 
@@ -87,6 +91,21 @@ def ping_database(engine: Engine, timeout_seconds: float = 2.0) -> bool:
         return False
     finally:
         pool.shutdown(wait=False, cancel_futures=True)
+
+
+def get_session(engine: Engine, token: str) -> dict[str, Any] | None:
+    """Look up a session by token and return its data if valid and not expired."""
+    return _get_session_db(engine, token)
+
+
+def revoke_session(engine: Engine, token: str) -> bool:
+    """Revoke (delete) a session by token. Returns True if a session was revoked."""
+    return _revoke_session_db(engine, token)
+
+
+def expire_sessions_for_user(engine: Engine, user_id: int) -> int:
+    """Expire all active sessions for a given user. Returns number of sessions expired."""
+    return _expire_sessions_for_user_db(engine, user_id)
 
 
 @contextmanager

@@ -41,9 +41,13 @@ def test_compose_defines_no_database_service() -> None:
     for name, service in _compose()["services"].items():
         image = str(service.get("image", "")).lower()
         assert not any(
-            hint in image for hint in ("postgres", "postgresql", "mysql", "mariadb", "mongo", "redis", "db")
+            hint in image
+            for hint in ("postgres", "postgresql", "mysql", "mariadb", "mongo", "redis", "db")
         ), f"{name} looks like a database"
-        assert not any(hint in name.lower() for hint in ("postgres", "postgresql", "mysql", "mariadb", "mongo", "redis", "db")), f"{name} looks like a database"
+        assert not any(
+            hint in name.lower()
+            for hint in ("postgres", "postgresql", "mysql", "mariadb", "mongo", "redis", "db")
+        ), f"{name} looks like a database"
 
 
 def test_compose_healthcheck_is_a_cli_call() -> None:
