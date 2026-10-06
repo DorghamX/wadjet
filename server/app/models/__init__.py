@@ -102,6 +102,32 @@ class Projects(Base):
 
     # Relationships
     gate: Mapped[QualityGates] = relationship(back_populates="projects")
+    tokens: Mapped[list[ApiTokens]] = relationship(back_populates="project")
+
+
+class ApiTokens(Base):
+    """API tokens table (section 4)."""
+
+    __tablename__ = "api_tokens"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    token_prefix: Mapped[str] = mapped_column(String(8), nullable=False, index=True)
+    token_hash: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    expires_at: Mapped[str | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_used_at: Mapped[str | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[str | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[str] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[str] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    # Relationships
+    project: Mapped[Projects] = relationship(back_populates="tokens")
 
 
 class ProjectGrants(Base):
@@ -147,6 +173,9 @@ class QualityGates(Base):
 
     # Relationships
     projects: Mapped[list[Projects]] = relationship(back_populates="gate")
+    conditions: Mapped[list[GateConditions]] = relationship(
+        back_populates="gate", cascade="all, delete-orphan"
+    )
 
 
 class GateConditions(Base):
@@ -165,9 +194,3 @@ class GateConditions(Base):
 
     # Relationship
     gate: Mapped[QualityGates] = relationship(back_populates="conditions")
-
-
-# Add relationship to QualityGates for conditions
-QualityGates.conditions = relationship(
-    "GateConditions", back_populates="gate", cascade="all, delete-orphan"
-)
