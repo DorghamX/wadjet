@@ -16,6 +16,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -194,3 +195,132 @@ class GateConditions(Base):
 
     # Relationship
     gate: Mapped[QualityGates] = relationship(back_populates="conditions")
+
+
+class Analyses(Base):
+    """Analyses table (section 4): one upload from the agent."""
+
+    __tablename__ = "analyses"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False, index=True)
+    commit_sha: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    ci_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    started_at: Mapped[str | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[str | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)  # complete|incomplete
+    scanner_runs: Mapped[str | None] = mapped_column(JSONB, nullable=True)
+    metrics: Mapped[str | None] = mapped_column(JSONB, nullable=True)
+    gate_status: Mapped[str | None] = mapped_column(String(16), nullable=True)  # passed|failed
+    gate_details: Mapped[str | None] = mapped_column(JSONB, nullable=True)
+    excluded_count: Mapped[int] = mapped_column(default=0, nullable=False)
+    created_at: Mapped[str] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[str] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class Issues(Base):
+    """Issues table (section 4): one persistent entity per project."""
+
+    __tablename__ = "issues"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False, index=True)
+    fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    tool: Mapped[str] = mapped_column(String(64), nullable=False)
+    rule_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    severity: Mapped[str] = mapped_column(String(16), nullable=False)
+    category: Mapped[str] = mapped_column(String(32), nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    file_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    line_start: Mapped[int | None] = mapped_column(nullable=True)
+    line_end: Mapped[int | None] = mapped_column(nullable=True)
+    snippet: Mapped[str | None] = mapped_column(Text, nullable=True)
+    snippet_norm_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    package: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    vuln_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    installed_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    fixed_versions: Mapped[str | None] = mapped_column(JSONB, nullable=True)
+    cwe: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    impact: Mapped[str | None] = mapped_column(Text, nullable=True)
+    fix: Mapped[str | None] = mapped_column(Text, nullable=True)
+    references: Mapped[str | None] = mapped_column(JSONB, nullable=True)
+    triage_status: Mapped[str] = mapped_column(String(24), default="open", nullable=False)
+    presence: Mapped[str] = mapped_column(String(16), default="present", nullable=False)
+    triage_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    triaged_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    triaged_at: Mapped[str | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    assignee_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    first_seen_analysis_id: Mapped[int | None] = mapped_column(
+        ForeignKey("analyses.id"), nullable=True
+    )
+    last_seen_analysis_id: Mapped[int | None] = mapped_column(
+        ForeignKey("analyses.id"), nullable=True
+    )
+    resolved_at: Mapped[str | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[str] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[str] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    __table_args__ = (UniqueConstraint("project_id", "fingerprint", name="uq_issue_fingerprint"),)
+
+
+class IssueEvents(Base):
+    """Issue events table (section 4): the timeline."""
+
+    __tablename__ = "issue_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    issue_id: Mapped[int] = mapped_column(ForeignKey("issues.id"), nullable=False, index=True)
+    actor_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    type: Mapped[str] = mapped_column(String(32), nullable=False)
+    payload: Mapped[str | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[str] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class IssueComments(Base):
+    """Issue comments table (section 4)."""
+
+    __tablename__ = "issue_comments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    issue_id: Mapped[int] = mapped_column(ForeignKey("issues.id"), nullable=False, index=True)
+    author_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    body_md: Mapped[str] = mapped_column(Text, nullable=False)
+    edited_at: Mapped[str | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_at: Mapped[str | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[str] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class IssueRequests(Base):
+    """Issue requests table (section 4): the request-action workflow."""
+
+    __tablename__ = "issue_requests"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    issue_id: Mapped[int] = mapped_column(ForeignKey("issues.id"), nullable=False, index=True)
+    requested_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    target_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    requested_action: Mapped[str] = mapped_column(String(24), nullable=False)
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    state: Mapped[str] = mapped_column(String(16), default="pending", nullable=False)
+    resolved_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    resolved_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    resolved_at: Mapped[str | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[str] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[str] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )

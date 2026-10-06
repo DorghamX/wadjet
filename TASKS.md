@@ -14,7 +14,7 @@ code, tests and one docs line exist, `make lint test` is green and the commit me
 - [x] **T1.1 (M)** Users, sessions, login/logout, argon2id, CSRF, rate limit, create-admin
 - [x] **T1.2 (M)** Groups, projects, grants, permission templates, `can()`
 - [x] **T1.3 (S)** Project tokens and token auth dependency
-- [ ] **T1.4 (M)** Audit log writer + exhaustive permission matrix test
+- [x] **T1.4 (M)** Audit log writer + exhaustive permission matrix test
 
 ## Phase 2: Analysis pipeline (the core)
 - [ ] **T2.1 (S)** Models and migrations for analyses, issues, events, comments, requests
