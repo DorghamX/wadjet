@@ -47,7 +47,7 @@ code, tests and one docs line exist, `make lint test` is green and the commit me
 ## Phase 5: Collaboration
 - [ ] **T5.1 (M)** Request-action workflow
 - [ ] **T5.2 (M)** Notifications and inbox
-- [ ] **T5.3 (S)** `@mentions`
+- [x] **T5.3 (S)** `@mentions`
 - [x] **T5.4 (S)** Audit log page
 - [x] **T5.5 (M)** CSV and SARIF export, quality gate badge
 
