@@ -36,6 +36,7 @@ from app.api.users import (
     update_user,
     user_choices,
 )
+from app.audit import read_audit
 from app.permissions import PERMISSION_TEMPLATES, Permission, can
 from app.projects import MEMBER_COLUMNS
 from app.web.routes import PageUser, render, require_page_user
@@ -48,6 +49,7 @@ TABS: tuple[tuple[str, str], ...] = (
     ("users", "Users"),
     ("groups", "Groups"),
     ("permissions", "Permissions"),
+    ("audit", "Audit"),
 )
 
 TAB_LABELS = dict(TABS)
@@ -562,3 +564,27 @@ def _matrix() -> dict[str, Any]:
 def permissions_page(request: Request, user: PageUser = Depends(require_page_user)) -> Response:
     """What each grant template gives, straight from ``app.permissions``."""
     return _page(request, user, "permissions", notice=_notice(request), **_matrix())
+
+
+@router.get("/admin/audit")
+def audit_page(request: Request, user: PageUser = Depends(require_page_user)) -> Response:
+    """Paginated audit log, admin only (section 13)."""
+    forbidden = _guard(request, user)
+    if forbidden is not None:
+        return forbidden
+    engine = request.app.state.engine
+    limit = int(request.query_params.get("limit", "50"))
+    action_filter = request.query_params.get("action")
+    entries = read_audit(
+        engine,
+        action=action_filter if action_filter else None,
+        limit=limit,
+    )
+    return _page(
+        request,
+        user,
+        "audit",
+        notice=_notice(request),
+        entries=entries,
+        limit=limit,
+    )
