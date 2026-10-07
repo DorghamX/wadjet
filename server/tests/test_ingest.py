@@ -76,9 +76,9 @@ def ingest_project(engine: Engine, admin_user_id: int) -> tuple[int, str]:
 
 
 @pytest.fixture()
-def project_token(engine: Engine, ingest_project: tuple[int, str]) -> str:
+def project_token(engine: Engine, ingest_project: tuple[int, str], admin_user_id: int) -> str:
     project_id, _ = ingest_project
-    full_token, _ = create_token(engine, project_id, "ingest", created_by=1)
+    full_token, _ = create_token(engine, project_id, "ingest", created_by=admin_user_id)
     return full_token
 
 

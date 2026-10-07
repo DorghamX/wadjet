@@ -52,6 +52,47 @@ def _wait_or_exit(settings: Settings, engine: Engine) -> None:
     raise SystemExit(EXIT_DATABASE)
 
 
+def _bootstrap_first_admin(engine: Engine, settings: Settings) -> None:
+    """Create the env-configured first admin, exactly once (15.3.3).
+
+    ``WADJET_ADMIN_USER``/``WADJET_ADMIN_PASSWORD`` are a first-boot
+    convenience for the documented quickstart: the moment any admin
+    exists they stop doing anything, so leaving them in ``.env`` after
+    setup changes nothing (``docs/operations.md`` says why you should
+    remove them anyway). A taken username that is *not* an admin is
+    left alone with a hint, never a crash.
+    """
+    user = settings.admin_user
+    password = settings.admin_password
+    if not user or not password:
+        return
+    from app.security import hash_password
+
+    email = f"{user}@localhost"
+    with engine.begin() as conn:
+        if conn.execute(text("SELECT count(*) FROM users WHERE is_admin")).scalar_one():
+            return
+        taken = conn.execute(
+            text("SELECT count(*) FROM users WHERE username = :u OR email = :e"),
+            {"u": user, "e": email},
+        ).scalar_one()
+        if taken:
+            print(
+                f"WADJET_ADMIN_USER={user} is already taken by a non-admin; "
+                "create an admin with: wadjet-server create-admin ...",
+                file=sys.stderr,
+            )
+            return
+        conn.execute(
+            text(
+                "INSERT INTO users (username, email, password_hash, is_admin, is_active) "
+                "VALUES (:u, :e, :h, TRUE, TRUE)"
+            ),
+            {"u": user, "e": email, "h": hash_password(password)},
+        )
+    print(f"Created first admin user {user}.")
+
+
 @app.command()
 def serve(
     host: str = typer.Option("0.0.0.0", help="Address to bind."),
@@ -62,9 +103,12 @@ def serve(
     settings = _settings_or_exit()
     engine = create_database_engine(settings)
     _wait_or_exit(settings, engine)
-    if settings.auto_migrate:
-        with advisory_lock(engine):
+    with advisory_lock(engine):
+        if settings.auto_migrate:
             upgrade_to_head(settings)
+        # Under the same lock: two replicas starting at once must not
+        # both think they are the first (section 15.3.3).
+        _bootstrap_first_admin(engine, settings)
     engine.dispose()
     if reload:
         uvicorn.run(

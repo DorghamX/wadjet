@@ -26,8 +26,8 @@ def make_project(engine: Engine, admin_user_id: int) -> tuple[int, str]:
     return int(project_id), key
 
 
-def token_for(engine: Engine, project_id: int) -> str:
-    full_token, _ = create_token(engine, project_id, "agentcfg", created_by=1)
+def token_for(engine: Engine, project_id: int, admin_user_id: int) -> str:
+    full_token, _ = create_token(engine, project_id, "agentcfg", created_by=admin_user_id)
     return full_token
 
 
@@ -47,7 +47,7 @@ def test_config_defaults_for_a_bare_project(
     client: TestClient, engine: Engine, admin_user_id: int
 ) -> None:
     project_id, key = make_project(engine, admin_user_id)
-    response = fetch_config(client, token_for(engine, project_id))
+    response = fetch_config(client, token_for(engine, project_id, admin_user_id))
     assert response.status_code == 200
     body = response.json()
     assert body["project_key"] == key
@@ -84,7 +84,7 @@ def test_config_honours_stored_scope_settings(
             text("UPDATE projects SET settings = :settings WHERE id = :pid"),
             {"settings": json.dumps(settings), "pid": project_id},
         )
-    body = fetch_config(client, token_for(engine, project_id)).json()
+    body = fetch_config(client, token_for(engine, project_id, admin_user_id)).json()
     assert body["exclusion_globs"] == ["private/"]
     assert body["settings"] == settings
 
@@ -94,5 +94,5 @@ def test_config_token_is_bound_to_its_project(
 ) -> None:
     project_a, key_a = make_project(engine, admin_user_id)
     make_project(engine, admin_user_id)
-    body = fetch_config(client, token_for(engine, project_a)).json()
+    body = fetch_config(client, token_for(engine, project_a, admin_user_id)).json()
     assert body["project_key"] == key_a
