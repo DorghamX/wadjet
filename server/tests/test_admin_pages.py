@@ -13,14 +13,33 @@ from __future__ import annotations
 
 import uuid
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, text
 
+from app.config import Settings
 from app.permissions import PERMISSION_TEMPLATES, Permission
 from app.security import hash_password, verify_password
 from app.seed import DEMO_PASSWORD, seed_demo
 
 HTML = {"Accept": "text/html"}
+
+
+@pytest.fixture(scope="module")
+def database_url(isolated_database_url: str) -> str:
+    """Own schema: these tests mutate users, groups and the seed dataset."""
+    return isolated_database_url
+
+
+@pytest.fixture(scope="module")
+def engine(isolated_engine: Engine) -> Engine:
+    return isolated_engine
+
+
+@pytest.fixture()
+def settings(isolated_settings: Settings) -> Settings:
+    return isolated_settings
+
 
 #: The four templates of section 7, as the matrix labels them.
 TEMPLATES = (

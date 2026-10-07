@@ -13,13 +13,32 @@ import json
 import re
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, text
 
+from app.config import Settings
 from app.permissions import PERMISSION_TEMPLATES
 from app.projects import grant
 from app.security import hash_password
 from app.seed import DEMO_PASSWORD, seed_demo
+
+
+@pytest.fixture(scope="module")
+def database_url(isolated_database_url: str) -> str:
+    """Own schema: these tests mutate seed users, tokens and member grants."""
+    return isolated_database_url
+
+
+@pytest.fixture(scope="module")
+def engine(isolated_engine: Engine) -> Engine:
+    return isolated_engine
+
+
+@pytest.fixture()
+def settings(isolated_settings: Settings) -> Settings:
+    return isolated_settings
+
 
 HTML = {"Accept": "text/html"}
 

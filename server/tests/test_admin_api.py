@@ -11,12 +11,30 @@ from __future__ import annotations
 
 import uuid
 
+import pytest
 from fastapi.testclient import TestClient
 from httpx import Response
 from sqlalchemy import Engine, text
 
+from app.config import Settings
 from app.security import hash_password, verify_password
 from app.seed import DEMO_PASSWORD, seed_demo
+
+
+@pytest.fixture(scope="module")
+def database_url(isolated_database_url: str) -> str:
+    """Own schema: these tests mutate users, groups and the seed dataset."""
+    return isolated_database_url
+
+
+@pytest.fixture(scope="module")
+def engine(isolated_engine: Engine) -> Engine:
+    return isolated_engine
+
+
+@pytest.fixture()
+def settings(isolated_settings: Settings) -> Settings:
+    return isolated_settings
 
 
 def create_user(engine: Engine, *, admin: bool) -> tuple[str, str]:

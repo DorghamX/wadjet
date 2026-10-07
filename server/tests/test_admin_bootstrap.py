@@ -23,6 +23,17 @@ TAKEN = "t61-taken-user"
 PASSWORD = "bootstrap-password-1234"
 
 
+@pytest.fixture(scope="module")
+def database_url(isolated_database_url: str) -> str:
+    """Own schema: the bootstrap expects a database with no admin at all."""
+    return isolated_database_url
+
+
+@pytest.fixture(scope="module")
+def engine(isolated_engine: Engine) -> Engine:
+    return isolated_engine
+
+
 def _settings(database_url: str, *, admin_user: str | None, admin_password: str | None) -> Settings:
     return Settings(
         database_url=database_url,
