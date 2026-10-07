@@ -820,3 +820,28 @@ Format: date, task, decision, reason.
   demo rows), and `_seeded_pending` scopes its lookup to the payments
   project - the schema tests leave a defaults-only pending
   `false_positive` request in the shared database.
+- **T5.3 - Mentions: a conservative pattern, an exact match.**
+  `MENTION_RE` requires a word boundary before the `@` (a lookbehind
+  over word characters, `@` and `.`, so `mail@example.com` is an
+  address, not a name) and captures a plain username token; whatever it
+  captures is matched *exactly* against the users table - a typo
+  notifies nobody. Trailing `._-` is stripped from the capture
+  (sentence glue: "ping @demo-bob." names `demo-bob`, not
+  `demo-bob.`), and one comment tells each person at most once.
+- **T5.3 - Only people the comment is visible to are told**: existing
+  active users, never the author, and only holders of `project.browse`
+  on that project - you cannot be pointed at an issue you cannot open.
+  The insert runs in the comment's own transaction (section 8: the
+  comment and its notes are one write). Editing a comment tells
+  nobody: an edit is not a new event (the timeline's rule applied to
+  notifications); deleting one removes its mention pointers in the
+  same write, because the page would skip the dangling ref anyway but
+  the API counts raw rows.
+- **T5.3 - The inbox sentence is one more case of the same shape**:
+  `{commenter} mentioned you on {title} in {key}.` - subject,
+  predicate, linked title, outro, exactly like the request sentences,
+  so the template renders both with one line. Deleted comments drop
+  out of the feed (live rows only); mention notifications appear in
+  `GET /api/v1/notifications` unchanged. The seed gained no mention
+  rows: its comment bodies are asserted verbatim by earlier tests, and
+  the flow is better proven by tests that write it fresh.

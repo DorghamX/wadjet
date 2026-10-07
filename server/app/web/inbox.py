@@ -21,7 +21,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy import text
+from sqlalchemy import Engine, bindparam, text
 
 from app.issue_requests import REQUEST_ACTIONS
 from app.notifications import mark_read, notifications_for
@@ -171,6 +171,47 @@ def _sent_line(row: dict[str, Any]) -> dict[str, str]:
     }
 
 
+#: The comment behind a mention notification, with everything its line
+#: needs. Deleted comments drop out; visibility is the caller's call.
+_MENTION_SQL = """
+SELECT c.id AS comment_id, i.id AS issue_id, i.title, p.key AS project_key,
+       u.display_name AS author_name, u.username AS author_username
+FROM issue_comments c
+JOIN issues i ON i.id = c.issue_id
+JOIN projects p ON p.id = i.project_id
+JOIN users u ON u.id = c.author_id
+WHERE c.deleted_at IS NULL AND c.id IN :ids
+"""
+
+
+def _mentioned_comments(engine: Engine, comment_ids: list[int]) -> dict[int, dict[str, Any]]:
+    """The live comments behind this user's mention notifications."""
+    if not comment_ids:
+        return {}
+    with engine.connect() as conn:
+        rows = (
+            conn.execute(
+                text(_MENTION_SQL).bindparams(bindparam("ids", expanding=True)),
+                {"ids": comment_ids},
+            )
+            .mappings()
+            .all()
+        )
+    return {int(row["comment_id"]): dict(row) for row in rows}
+
+
+def _mention_entry(row: dict[str, Any]) -> dict[str, Any]:
+    """'{commenter} mentioned you on {title} in {key}.' - same shape as
+    a request sentence, so the template renders both with one line."""
+    return {
+        "subject": _who(row["author_name"], row["author_username"]),
+        "predicate": "mentioned you on",
+        "outro": f" in {row['project_key']}.",
+        "title": str(row["title"]),
+        "url": f"/projects/{row['project_key']}/issues/{row['issue_id']}",
+    }
+
+
 def inbox_context(request: Request, user: PageUser) -> dict[str, Any]:
     """Everything the three panels render - one query's rows, three views."""
     engine = request.app.state.engine
@@ -201,17 +242,32 @@ def inbox_context(request: Request, user: PageUser) -> dict[str, Any]:
     sent = [_sent_line(row) for row in involved if int(row["requested_by"]) == user.id]
 
     notifications: list[dict[str, Any]] = []
+    parsed: list[tuple[dict[str, Any], dict[str, Any]]] = []
     for note in notifications_for(engine, user_id=user.id):
-        if str(note["type"]) != "request":  # 'mention' arrives with T5.3
-            continue
         raw = note["ref"]
         ref: dict[str, Any] = json.loads(raw) if isinstance(raw, str) else (raw or {})
-        source: dict[str, Any] | None = (
-            by_id.get(int(ref["request"])) if ref.get("request") is not None else None
-        )
-        if source is None:  # the request is gone, or in a project since hidden
+        parsed.append((note, ref))
+    mentions = _mentioned_comments(
+        engine,
+        [
+            int(ref["comment"])
+            for note, ref in parsed
+            if str(note["type"]) == "mention" and ref.get("comment") is not None
+        ],
+    )
+    for note, ref in parsed:
+        if str(note["type"]) == "mention":
+            source = mentions.get(int(ref.get("comment") or -1))
+            if source is None or str(source["project_key"]) not in visible:
+                continue  # comment deleted, or hidden with its project
+            entry = _mention_entry(source)
+        elif str(note["type"]) == "request":
+            source = by_id.get(int(ref["request"])) if ref.get("request") is not None else None
+            if source is None:  # the request is gone, or in a project since hidden
+                continue
+            entry = _entry(source, user.id)
+        else:  # an unknown type: never render what cannot be read
             continue
-        entry = _entry(source, user.id)
         entry.update(id=int(note["id"]), read=note["read_at"] is not None)
         notifications.append(entry)
 

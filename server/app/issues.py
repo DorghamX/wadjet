@@ -16,15 +16,18 @@ apart on who may do what.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, cast
 
 import nh3
 from markdown_it import MarkdownIt
-from sqlalchemy import Engine, text
+from sqlalchemy import Engine, bindparam, text
+from sqlalchemy.engine import Connection
 
 from app.audit import write_audit
+from app.notifications import create_notification
 from app.permissions import Permission, can
 
 #: Triage vocabulary (section 4), in the order the sidebar lists it.
@@ -669,6 +672,63 @@ def _clean_comment(body: str | None) -> str:
     return cleaned
 
 
+#: An @username at a word boundary, so ``mail@example.com`` never counts
+#: as one (the lookbehind rejects a preceding word character, '@' or
+#: '.'). Usernames in Wadjet are plain, unvalidated strings, so this
+#: stays conservative: whatever it captures is then matched *exactly*
+#: against the users table - a typo notifies nobody.
+MENTION_RE = re.compile(r"(?<![\w@.])@([A-Za-z0-9][A-Za-z0-9_.-]{0,63})")
+
+
+def _mentions(body: str) -> list[str]:
+    """The usernames named in a comment, once each, in order.
+
+    Sentence punctuation is not part of the name: 'ping @demo-bob.'
+    names ``demo-bob``, not ``demo-bob.`` - which would match no user
+    and silently fail to tell them.
+    """
+    found: dict[str, None] = {}
+    for name in MENTION_RE.findall(body):
+        found.setdefault(name.rstrip("._-"))
+    return list(found)
+
+
+def _notify_mentions(
+    engine: Engine,
+    conn: Connection,
+    *,
+    issue: Mapping[str, Any],
+    comment_id: int,
+    author_id: int,
+    body: str,
+) -> None:
+    """Section 8: ``@username`` mentions notify - inside the comment's
+    own transaction, and only for people the comment is actually
+    visible to: you cannot be told about a comment in a project you
+    cannot browse, and mentioning yourself is not news."""
+    names = _mentions(body)
+    if not names:
+        return
+    rows = conn.execute(
+        text("SELECT id FROM users WHERE is_active AND username IN :names").bindparams(
+            bindparam("names", expanding=True)
+        ),
+        {"names": names},
+    ).all()
+    project_id = int(issue["project_id"])
+    for (mentioned_id,) in rows:
+        mentioned_id = int(mentioned_id)
+        if mentioned_id == author_id:
+            continue
+        if can(engine, mentioned_id, Permission.PROJECT_BROWSE, project_id=project_id):
+            create_notification(
+                conn,
+                user_id=mentioned_id,
+                kind="mention",
+                ref={"issue": int(issue["id"]), "comment": comment_id},
+            )
+
+
 def add_comment(
     engine: Engine, *, issue: Mapping[str, Any], author_id: int, body: str | None
 ) -> int:
@@ -688,6 +748,16 @@ def add_comment(
             ),
             {"iid": int(issue["id"]), "author": author_id, "body": cleaned},
         ).scalar_one()
+        # Section 8: '@username mentions notify' - the comment and its
+        # notes are one write, so one cannot exist without the other.
+        _notify_mentions(
+            engine,
+            conn,
+            issue=issue,
+            comment_id=int(row),
+            author_id=author_id,
+            body=cleaned,
+        )
     return int(row)
 
 
@@ -758,6 +828,16 @@ def delete_comment(
     with engine.begin() as conn:
         conn.execute(
             text("UPDATE issue_comments SET deleted_at = now() WHERE id = :cid"),
+            {"cid": int(comment["id"])},
+        )
+        # A mention of a comment nobody can read anymore is not a
+        # notification: the page would skip the dangling ref anyway, and
+        # the API must not count what cannot be rendered.
+        conn.execute(
+            text(
+                "DELETE FROM notifications WHERE type = 'mention' "
+                "AND (ref ->> 'comment')::bigint = :cid"
+            ),
             {"cid": int(comment["id"])},
         )
 
