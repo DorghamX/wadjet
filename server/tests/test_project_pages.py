@@ -179,6 +179,16 @@ def test_overview_banner_word_matches_the_outcome(client: TestClient, engine: En
     assert "bandit is not installed" in pipeline
 
 
+def test_overview_links_to_its_issue_list(client: TestClient, engine: Engine) -> None:
+    """Phase-4 reachability: the overview tabs are the hub of the project pages."""
+    seed_demo(engine)
+    password = _signup(engine, "hubadmin", is_admin=True)
+    _login(client, "hubadmin", password)
+    body = client.get("/projects/payments").text
+    assert '<a class="on" href="/projects/payments">Overview</a>' in body
+    assert '<a href="/projects/payments/issues">Issues</a>' in body
+
+
 def test_overview_trend_scanners_and_history(client: TestClient, engine: Engine) -> None:
     seed_demo(engine)
     password = _signup(engine, "trendadmin", is_admin=True)

@@ -621,3 +621,22 @@ Format: date, task, decision, reason.
   failed with "too many clients already". The `app` and `live_server`
   fixtures now dispose on teardown - the leak was pre-existing, the new file
   just found its edge.
+- **T4.3 - The overview is the hub of its project pages.** The design mocks
+  pages as isolated windows and has no cross-page links, so section 14's
+  "every page is reachable" needs a nav of our own: a `.tabs` row (the same
+  pattern the design uses inside project settings) after the gate banner,
+  "Overview" active. The banner keeps the top of the page - failing
+  conditions first, as the design copy demands. Track A extends this row
+  with its own links (analyses, settings); Track B (issues) landed it before
+  the split so the tracks never both edit this template.
+- **Parallel build - two tracks in two worktrees.** Work is split by feature
+  vertical (guide 17.4): Track A (worktree `wadjet-trackA`, branch `track-a`)
+  takes T4.5-T4.9, T5.4, T5.5, T6.2, T6.3 - pages over existing data,
+  admin, exports, release workflows; Track B (this worktree) takes T4.4,
+  T5.1-T5.3, T6.1, T6.4 - the issue-workflow chain, which is too
+  interdependent to split (detail -> requests -> notifications -> inbox ->
+  mentions). Each track gets its own database (`wadjet`, `wadjet_a`) so
+  Alembic heads and seed data never collide; only Track B creates
+  migrations. Shared files (`main.py`, `TASKS.md`, `decisions.md`,
+  `wadjet.css`) are append-only per track and merged by Track B.
+  Details: `~/projects/wadjet-files/track-a-brief.md`.

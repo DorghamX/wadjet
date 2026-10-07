@@ -16,6 +16,11 @@
 </div>
 {% endif %}
 
+<div class="tabs">
+  <a class="on" href="/projects/{{ project.key }}">Overview</a>
+  <a href="/projects/{{ project.key }}/issues">Issues</a>
+</div>
+
 {% if has_analyses %}
 <div class="g g4">
   {% for card in cards %}

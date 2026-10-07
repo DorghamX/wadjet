@@ -42,6 +42,7 @@ code, tests and one docs line exist, `make lint test` is green and the commit me
 - [ ] **T4.6 (M)** Gates pages
 - [ ] **T4.7 (M)** Admin users, groups, permission matrix page
 - [ ] **T4.8 (S)** Analyses history
+- [ ] **T4.9 (S)** Profile and password page ``/me`` (section 14 route; no id in 17.3)
 
 ## Phase 5: Collaboration
 - [ ] **T5.1 (M)** Request-action workflow
