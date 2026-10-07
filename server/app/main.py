@@ -34,6 +34,7 @@ from app.ratelimit import rate_limiter
 from app.security import hash_password, verify_password
 from app.session import create_session
 from app.session import get_session as get_db_session
+from app.web.gates import router as gates_pages_router  # T4.6
 from app.web.issues import router as issue_pages_router
 from app.web.projects import router as project_pages_router
 from app.web.routes import (
@@ -107,6 +108,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.include_router(project_pages_router)
     application.include_router(issue_pages_router)
     application.include_router(settings_pages_router)  # T4.5
+    application.include_router(gates_pages_router)  # T4.6
 
     @application.post("/session", status_code=201)
     def login(

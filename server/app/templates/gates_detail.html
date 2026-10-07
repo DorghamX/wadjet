@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}{{ gate.name }} - Quality gate - Wadjet{% endblock %}
+{% block content %}
+<div class="pagehead">
+  <h1>{{ gate.name }}</h1>
+  <span class="m mu">/gates/{{ gate.id }}</span>
+</div>
+
+{% if notice %}<p class="formnote ok">{{ notice }}</p>{% endif %}
+{% if error %}<p class="formnote bad" role="alert">{{ error }}</p>{% endif %}
+
+<div class="win">
+  <div class="tb"><svg aria-hidden="true"><use href="#lg"/></svg><b>{{ gate.name }}</b><span class="m">/gates/{{ gate.id }}</span></div>
+  <div class="bd">
+    <p class="mu">
+      {% if gate.used_by %}Used by {{ gate.used_by }} project{{ "s" if gate.used_by != 1 else "" }}.
+      {% else %}Not used by any project yet.{% endif %}
+      Applies to all code in scope on every analysis.
+    </p>
+    {% if gate.is_default %}<span class="c nt">Built-in default</span>{% endif %}
+
+    <form method="post" action="/gates/{{ gate.id }}">
+      <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+      <div id="conditions">
+      {% for condition in gate.conditions %}
+        {% if can_edit %}
+        <div class="gr" data-row>
+          <b>Fail when</b>
+          <label for="c{{ loop.index0 }}-metric">Metric</label>
+          <select class="f" id="c{{ loop.index0 }}-metric" name="metric">
+            {% for metric in metrics %}<option value="{{ metric.value }}"{% if metric.value == condition.metric %} selected{% endif %}>{{ metric.label }}</option>{% endfor %}
+          </select>
+          <label for="c{{ loop.index0 }}-operator">Operator</label>
+          <select class="f" id="c{{ loop.index0 }}-operator" name="operator">
+            {% for operator in operators %}<option value="{{ operator.value }}"{% if operator.value == condition.operator %} selected{% endif %}>{{ operator.word }}</option>{% endfor %}
+          </select>
+          <label for="c{{ loop.index0 }}-threshold">Threshold</label>
+          <input class="f" id="c{{ loop.index0 }}-threshold" name="threshold" inputmode="decimal" value="{{ condition.value }}">
+          <button class="b js-remove" type="button">Remove</button>
+        </div>
+        {% else %}
+        <div class="gr">
+          <b>Fail when</b>
+          <span class="f">{{ condition.label }}</span>
+          <span class="f">{{ condition.word }}</span>
+          <span class="f">{{ condition.words }}</span>
+        </div>
+        {% endif %}
+      {% endfor %}
+      </div>
+      {% if not gate.conditions %}<p class="mu">No conditions yet - add one and save.</p>{% endif %}
+      {% if can_edit %}
+      <p style="margin-top:12px">
+        <button class="b" type="button" id="add-condition">Add condition</button>
+        <button class="b p" type="submit">Save gate</button>
+      </p>
+      {% endif %}
+    </form>
+
+    {% if can_edit and not gate.is_builtin %}
+    <form method="post" action="/gates/{{ gate.id }}/delete" style="margin-top:14px">
+      <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+      <button class="b del" type="submit" onclick="return confirm('Delete this gate?')">Delete gate</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% if can_edit %}
+<template id="condition-row">
+  <div class="gr" data-row>
+    <b>Fail when</b>
+    <label for="cX-metric">Metric</label>
+    <select class="f" id="cX-metric" name="metric">
+      {% for metric in metrics %}<option value="{{ metric.value }}"{% if metric.value == "issues_total" %} selected{% endif %}>{{ metric.label }}</option>{% endfor %}
+    </select>
+    <label for="cX-operator">Operator</label>
+    <select class="f" id="cX-operator" name="operator">
+      {% for operator in operators %}<option value="{{ operator.value }}"{% if operator.value == ">" %} selected{% endif %}>{{ operator.word }}</option>{% endfor %}
+    </select>
+    <label for="cX-threshold">Threshold</label>
+    <input class="f" id="cX-threshold" name="threshold" inputmode="decimal" value="0">
+    <button class="b js-remove" type="button">Remove</button>
+  </div>
+</template>
+<script>
+(function(){
+  var box=document.getElementById("conditions");
+  var add=document.getElementById("add-condition");
+  var tpl=document.getElementById("condition-row");
+  if(!box||!add||!tpl) return;
+  // Rows are numbered from the end of the server's own ids and only go up,
+  // so a remove-then-add cycle can never reuse an id.
+  var seq=box.querySelectorAll("[data-row]").length;
+  add.addEventListener("click",function(){
+    var row=tpl.content.firstElementChild.cloneNode(true);
+    row.innerHTML=row.innerHTML.split("cX").join("c"+seq++);
+    box.appendChild(row);
+    row.querySelector("select").focus();
+  });
+  box.addEventListener("click",function(event){
+    var remove=event.target.closest(".js-remove");
+    if(remove){var row=remove.closest("[data-row]");row.parentNode.removeChild(row);}
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}

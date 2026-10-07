@@ -39,7 +39,7 @@ code, tests and one docs line exist, `make lint test` is green and the commit me
 - [x] **T4.3 (M)** Issues list with HTMX filters
 - [ ] **T4.4 (L)** Issue detail: triage, assignment, comments, timeline
 - [x] **T4.5 (M)** Project settings pages
-- [ ] **T4.6 (M)** Gates pages
+- [x] **T4.6 (M)** Gates pages
 - [ ] **T4.7 (M)** Admin users, groups, permission matrix page
 - [ ] **T4.8 (S)** Analyses history
 - [ ] **T4.9 (S)** Profile and password page ``/me`` (section 14 route; no id in 17.3)

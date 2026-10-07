@@ -664,3 +664,13 @@ Format: date, task, decision, reason.
   means section 9's built-in default - reported as null by the API and shown
   as the checked radio by the picker - and a created token is printed once
   in the render, never re-readable.
+
+**T4.6 -** Gate pages read like the API list (session-scoped, no special
+  privilege) but every write - create, save, delete - requires global
+  `gates.admin` and renders a 403 page naming it; the CRUD itself moved into
+  public `add_gate()`/`edit_gate()`/`remove_gate()` services in
+  `app/api/gates.py` so pages and endpoints share one write path, one audit
+  (`gate.create`/`gate.update`/`gate.delete`) and one rule set (builtin and
+  in-use gates refuse deletion). Unknown or non-digit gate ids 404 before any
+  permission check, and the detail page offers no rename - names change only
+  via `PATCH /api/v1/gates/{id}`, matching the design's edit rows.
