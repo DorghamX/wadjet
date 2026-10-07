@@ -270,6 +270,113 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "created_at": str(created_at),
         }
 
+    @application.patch("/api/v1/me", response_model=dict)
+    def patch_me(
+        request: Request,
+        display_name: str | None = None,
+        current_password: str | None = None,
+        new_password: str | None = None,
+        current: dict[str, Any] = Depends(get_current_user),
+    ) -> dict[str, Any]:
+        """Update the current user's profile or password (section 14)."""
+        engine = application.state.engine
+        with engine.begin() as conn:
+            result = conn.execute(
+                text(
+                    """
+                SELECT id, username, password_hash, display_name, is_admin, is_active
+                FROM users WHERE id = :uid
+                """
+                ),
+                {"uid": current["user_id"]},
+            ).first()
+        if not result:
+            raise HTTPException(status_code=404, detail="User not found")
+        uid, username, stored_hash, display_name_old, is_admin, is_active = result
+
+        changes: dict[str, Any] = {}
+        if display_name is not None:
+            changes["display_name"] = display_name
+
+        if current_password is not None or new_password is not None:
+            # Password change requires current password verification
+            if not current_password or not new_password:
+                raise HTTPException(
+                    status_code=400, detail="Both current and new password are required"
+                )
+            if not verify_password(current_password, stored_hash):
+                raise HTTPException(status_code=403, detail="Current password is incorrect")
+            # Argon2id hash the new password
+            new_hash = hash_password(new_password)
+            changes["password_hash"] = new_hash
+
+        if not changes:
+            raise HTTPException(status_code=422, detail="Nothing to update")
+
+        with engine.begin() as conn:
+            assignments = ", ".join(f'"{column}" = :{column}' for column in changes)
+            params: dict[str, Any] = dict(changes)
+            params["uid"] = current["user_id"]
+            conn.execute(
+                text(f"UPDATE users SET {assignments} WHERE id = :uid"),
+                params,
+            )
+            # Return the updated user info
+            row = conn.execute(
+                text(
+                    """
+                SELECT id, username, email, display_name, is_admin, is_active, created_at
+                FROM users WHERE id = :uid
+                """
+                ),
+                {"uid": current["user_id"]},
+            ).first()
+        uid2, username2, email2, display_name2, is_admin2, is_active2, created_at2 = row
+        return {
+            "id": uid2,
+            "username": username2,
+            "email": email2,
+            "display_name": display_name2,
+            "is_admin": is_admin2,
+            "is_active": is_active2,
+            "created_at": str(created_at2),
+        }
+
+    @application.post("/api/v1/me/password", response_model=dict)
+    def post_me_password(
+        request: Request,
+        current_password: str,
+        new_password: str,
+        current: dict[str, Any] = Depends(get_current_user),
+    ) -> dict[str, Any]:
+        """Change the current user's password (section 14)."""
+        engine = application.state.engine
+        with engine.begin() as conn:
+            result = conn.execute(
+                text(
+                    """
+                SELECT id, username, password_hash, display_name, is_admin, is_active
+                FROM users WHERE id = :uid
+                """
+                ),
+                {"uid": current["user_id"]},
+            ).first()
+        if not result:
+            raise HTTPException(status_code=404, detail="User not found")
+        uid, username, stored_hash, display_name, is_admin, is_active = result
+
+        if not verify_password(current_password, stored_hash):
+            raise HTTPException(status_code=403, detail="Current password is incorrect")
+
+        new_hash = hash_password(new_password)
+        with engine.begin() as conn:
+            conn.execute(
+                text("UPDATE users SET password_hash = :hash WHERE id = :uid"),
+                {"hash": new_hash, "uid": current["user_id"]},
+            )
+
+        return {"detail": "Password changed successfully"}
+
     @application.post("/admin/create-admin")
     def create_admin_endpoint(
         username: str,
