@@ -9,14 +9,26 @@ endpoint never confirms that somebody else's project exists.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 
 from app.deps import get_current_user
-from app.issues import BadIssueFilter, IssueFilters, query_issues
+from app.issues import (
+    BadIssueAction,
+    BadIssueFilter,
+    IssueFilters,
+    IssuePermissionDenied,
+    add_comment,
+    assign_issue,
+    list_comments,
+    load_issue_by_id,
+    query_issues,
+    set_triage,
+)
 from app.projects import visible_project
 
 router = APIRouter()
@@ -120,6 +132,221 @@ def list_issues(
         per_page=filters.per_page,
         issues=[_issue_out(row) for row in rows],
     )
+
+
+class TriageIn(BaseModel):
+    """``PATCH /api/v1/issues/{id}``: the status to set and why (section 8)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    triage_status: str
+    reason: str | None = None
+
+
+class AssignIn(BaseModel):
+    """``POST .../assign``: who owns it now; ``null`` unassigns (explicitly)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    assignee_id: int | None
+
+
+class CommentIn(BaseModel):
+    """``POST .../comments``: the comment body, markdown subset (section 8)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    body: str
+
+
+class CommentOut(BaseModel):
+    """One comment as the API returns it (deleted ones never appear)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    author: AssigneeOut
+    body_md: str
+    created_at: datetime
+    edited_at: datetime | None = None
+
+
+class IssueDetailOut(IssueOut):
+    """One issue in full: what it is, what was done about it (section 12)."""
+
+    triage_reason: str | None = None
+    triaged_by: AssigneeOut | None = None
+    triaged_at: datetime | None = None
+    description: str | None = None
+    impact: str | None = None
+    fix: str | None = None
+    snippet: str | None = None
+    cwe: str | None = None
+    installed_version: str | None = None
+    fixed_versions: list[str] | None = None
+    references: list[str] | None = None
+
+
+def _ip(request: Request) -> str | None:
+    return request.client.host if request.client else None
+
+
+def _issue_by_id(request: Request, issue_id: int, user: dict[str, Any]) -> dict[str, Any]:
+    """The issue, but only if its project may be browsed by this user.
+
+    "No such issue" answers for all three states - unknown id, other
+    project's issue, project without a grant - so the endpoint never
+    confirms that an id belongs to somebody else's project (section 7).
+    """
+    engine = request.app.state.engine
+    issue = load_issue_by_id(engine, issue_id=issue_id)
+    if issue is None:
+        raise HTTPException(status_code=404, detail="No such issue")
+    project = visible_project(engine, key=str(issue["project_key"]), user_id=int(user["user_id"]))
+    if project is None:
+        raise HTTPException(status_code=404, detail="No such issue")
+    return issue
+
+
+def _reload(engine: Any, issue_id: int) -> dict[str, Any]:
+    row = load_issue_by_id(engine, issue_id=issue_id)
+    if row is None:  # pragma: no cover - the row was just written
+        raise HTTPException(status_code=404, detail="No such issue")
+    return row
+
+
+def _detail_out(row: Mapping[str, Any]) -> IssueDetailOut:
+    triaged_by: AssigneeOut | None = None
+    if row["triaged_by"] is not None:
+        triaged_by = AssigneeOut(
+            id=int(row["triaged_by"]),
+            username=str(row["triager_username"]),
+            display_name=row["triager_name"],
+        )
+    return IssueDetailOut(
+        **_issue_out(row).model_dump(),
+        triage_reason=row["triage_reason"],
+        triaged_by=triaged_by,
+        triaged_at=row["triaged_at"],
+        description=row["description"],
+        impact=row["impact"],
+        fix=row["fix"],
+        snippet=row["snippet"],
+        cwe=row["cwe"],
+        installed_version=row["installed_version"],
+        fixed_versions=row["fixed_versions"],
+        references=row["references"],
+    )
+
+
+def _comment_out(row: Mapping[str, Any]) -> CommentOut:
+    return CommentOut(
+        id=int(row["id"]),
+        author=AssigneeOut(
+            id=int(row["author_id"]),
+            username=str(row["author_username"]),
+            display_name=row["author_name"],
+        ),
+        body_md=str(row["body_md"]),
+        created_at=row["created_at"],
+        edited_at=row["edited_at"],
+    )
+
+
+def _guarded(action: Callable[[], Any]) -> Any:
+    """Run a service call, translating its errors to section-12 answers."""
+    try:
+        return action()
+    except IssuePermissionDenied as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except BadIssueAction as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/api/v1/issues/{issue_id}", response_model=IssueDetailOut)
+def get_issue(
+    request: Request, issue_id: int, user: dict[str, Any] = Depends(get_current_user)
+) -> IssueDetailOut:
+    """One issue in full: snippet, explanation, triage state (section 12)."""
+    return _detail_out(_issue_by_id(request, issue_id, user))
+
+
+@router.patch("/api/v1/issues/{issue_id}", response_model=IssueDetailOut)
+def triage_issue(
+    request: Request,
+    issue_id: int,
+    body: TriageIn,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> IssueDetailOut:
+    """Set the triage status with a reason where section 8 demands one.
+
+    403 when the user lacks that status's ``flag.*`` permission, 422 when
+    the status is unknown or the reason is missing or too short - the same
+    rules the page's buttons follow, because both call one service.
+    """
+    engine = request.app.state.engine
+    issue = _issue_by_id(request, issue_id, user)
+    _guarded(
+        lambda: set_triage(
+            engine,
+            issue=issue,
+            status=body.triage_status,
+            reason=body.reason,
+            actor_id=int(user["user_id"]),
+            ip=_ip(request),
+        )
+    )
+    return _detail_out(_reload(engine, issue_id))
+
+
+@router.post("/api/v1/issues/{issue_id}/assign", response_model=IssueDetailOut)
+def assign(
+    request: Request,
+    issue_id: int,
+    body: AssignIn,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> IssueDetailOut:
+    """Assign to a project member, or unassign with a null id (section 8)."""
+    engine = request.app.state.engine
+    issue = _issue_by_id(request, issue_id, user)
+    _guarded(
+        lambda: assign_issue(
+            engine,
+            issue=issue,
+            assignee_id=body.assignee_id,
+            actor_id=int(user["user_id"]),
+        )
+    )
+    return _detail_out(_reload(engine, issue_id))
+
+
+@router.get("/api/v1/issues/{issue_id}/comments", response_model=list[CommentOut])
+def list_issue_comments(
+    request: Request, issue_id: int, user: dict[str, Any] = Depends(get_current_user)
+) -> list[CommentOut]:
+    """Every live comment, oldest first (section 12)."""
+    engine = request.app.state.engine
+    _issue_by_id(request, issue_id, user)
+    return [_comment_out(row) for row in list_comments(engine, issue_id=issue_id)]
+
+
+@router.post("/api/v1/issues/{issue_id}/comments", response_model=CommentOut, status_code=201)
+def create_issue_comment(
+    request: Request,
+    issue_id: int,
+    body: CommentIn,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> CommentOut:
+    """Post a comment; 403 without ``issue.comment``, 422 when empty (8, 12)."""
+    engine = request.app.state.engine
+    issue = _issue_by_id(request, issue_id, user)
+    comment_id = _guarded(
+        lambda: add_comment(engine, issue=issue, author_id=int(user["user_id"]), body=body.body)
+    )
+    rows = list_comments(engine, issue_id=issue_id, comment_id=int(comment_id))
+    if not rows:  # pragma: no cover - the row was just written
+        raise HTTPException(status_code=404, detail="No such comment")
+    return _comment_out(rows[0])
 
 
 __all__ = ["router"]

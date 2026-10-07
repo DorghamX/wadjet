@@ -2,6 +2,7 @@
    the table. Clicking a facet replaces this whole region (htmx), so the
    hidden fields and the active states are re-rendered together; typing in the
    search box only replaces #issues-table, which is what keeps the caret put. #}
+{% if error %}<div class="ban" role="alert"><b>Nothing changed.</b> {{ error }}</div>{% endif %}
 {% if filters.status %}<input type="hidden" name="status" value="{{ filters.status }}">{% endif %}
 {% if filters.severity %}<input type="hidden" name="severity" value="{{ filters.severity }}">{% endif %}
 {% if filters.category %}<input type="hidden" name="category" value="{{ filters.category }}">{% endif %}
@@ -41,6 +42,21 @@
         {% for value, label in sorts %}<option value="{{ value }}"{% if filters.sort == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
       </select>
     </div>
+    {% if bulk_statuses %}
+    {# Bulk triage (section 8). The controls belong to #bulk-form - the page
+       level sibling of the search form - through the form attribute, so this
+       stays a GET form and no form ever nests inside another.            #}
+    <div class="gr">
+      <label class="mu" for="bulk-status">Apply status</label>
+      <select class="f" id="bulk-status" name="bulk_status" form="bulk-form">
+        {% for value, label in bulk_statuses %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+      </select>
+      <label class="vh" for="bulk-reason">Reason</label>
+      <input class="f" id="bulk-reason" name="reason" form="bulk-form" style="min-width:220px"
+             placeholder="Reason - required for some statuses (10+ characters)">
+      <button class="b" type="submit" form="bulk-form">Apply</button>
+    </div>
+    {% endif %}
     <div id="issues-table">
 {% include "issues_table.html" %}
     </div>

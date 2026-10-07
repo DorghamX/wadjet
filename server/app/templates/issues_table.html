@@ -5,6 +5,7 @@
 <div class="tablewrap">
 <table class="t">
   <tr>
+    {% if bulk_statuses %}<th scope="col"><label class="vh" for="bulk-all">Select all matching issues</label><input type="checkbox" id="bulk-all" name="all" value="1" form="bulk-form"></th>{% endif %}
     <th scope="col">Severity</th>
     <th scope="col">Issue</th>
     <th scope="col">Location</th>
@@ -13,8 +14,9 @@
   </tr>
   {% for i in issues %}
   <tr>
+    {% if bulk_statuses %}<td><label class="vh" for="bulk-issue-{{ i.id }}">Select issue {{ i.id }}</label><input type="checkbox" id="bulk-issue-{{ i.id }}" name="ids" value="{{ i.id }}" form="bulk-form"></td>{% endif %}
     <td><span class="{{ i.severity_class }}">{{ i.severity_word }}</span></td>
-    <td>{{ i.title }}<br><span class="mu">{{ i.rule }}</span></td>
+    <td><a href="/projects/{{ project.key }}/issues/{{ i.id }}">{{ i.title }}</a><br><span class="mu">{{ i.rule }}</span></td>
     <td class="m">{% if i.location %}{{ i.location }}{% else %}<span class="mu">-</span>{% endif %}</td>
     <td><span class="c {{ i.chip }}">{{ i.status_word }}</span>{% if i.resolved %} <span class="c nt">Resolved</span>{% endif %}</td>
     <td>{{ i.assignee or "Unassigned" }}</td>

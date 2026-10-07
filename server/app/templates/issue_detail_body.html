@@ -1,0 +1,128 @@
+{# Children of #issue-detail: the two panes, plus whatever a post brought back. #}
+{% if error %}<div class="ban" role="alert"><b>Nothing changed.</b> {{ error }}</div>{% endif %}
+<div class="g g3">
+  <div>
+    <p style="margin-bottom:2px"><span class="{{ issue.severity_class }}">{{ issue.severity_word }}</span> <span class="mu">{{ issue.rule }}</span></p>
+    <h3 style="font-size:20px">{{ issue.title }}</h3>
+    <p class="m mu">{{ issue.meta }}</p>
+    {% if snippet %}
+    <div class="code">
+      {% for row in snippet %}
+      <div{% if row.flagged %} class="h"{% endif %}>{% if row.number is not none %}{{ "%3d"|format(row.number) }}  {% endif %}{{ row.text }}</div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% if issue.description %}<h3>What it is</h3><p>{{ issue.description }}</p>{% endif %}
+    {% if issue.impact %}<h3>Impact on the app</h3><p>{{ issue.impact }}</p>{% endif %}
+    {% if issue.fix %}<h3>How to fix</h3><p>{{ issue.fix }}</p>{% endif %}
+    <h3>Activity</h3>
+    {% if activity %}
+    <ul class="tl">
+      {% for item in activity %}
+      <li>
+        {% if item.kind == "comment" %}
+        <b>{{ item.author }}</b> <span class="mu m">{{ item.when }}</span>{% if item.edited %} <span class="mu m">(edited)</span>{% endif %}
+        <div>{{ item.html | safe }}</div>
+        {% if item.can_edit %}
+        <details class="m mu"><summary>Edit</summary>
+          <form method="post" action="/projects/{{ project.key }}/issues/{{ issue.id }}/comments/{{ item.id }}/edit"
+                hx-post="/projects/{{ project.key }}/issues/{{ issue.id }}/comments/{{ item.id }}/edit" hx-target="#issue-detail">
+            <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+            <label for="edit-comment-{{ item.id }}">Your comment</label>
+            <textarea class="f" id="edit-comment-{{ item.id }}" name="body" rows="3">{{ item.body }}</textarea>
+            <button class="b" type="submit">Save</button>
+          </form>
+        </details>
+        {% endif %}
+        {% if item.can_delete %}
+        <form method="post" action="/projects/{{ project.key }}/issues/{{ issue.id }}/comments/{{ item.id }}/delete"
+              hx-post="/projects/{{ project.key }}/issues/{{ issue.id }}/comments/{{ item.id }}/delete" hx-target="#issue-detail"
+              style="display:inline">
+          <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+          <button class="b" type="submit">Delete</button>
+        </form>
+        {% endif %}
+        {% elif item.kind == "request" %}
+        {{ item.text }} <span class="c {{ item.chip }}">{{ item.word }}</span> <span class="mu m">{{ item.when }}</span>
+        {% else %}
+        {{ item.text }} <span class="mu m">{{ item.when }}</span>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="mu">Nothing has happened yet.</p>
+    {% endif %}
+    {% if can_comment %}
+    <form method="post" action="/projects/{{ project.key }}/issues/{{ issue.id }}/comments"
+          hx-post="/projects/{{ project.key }}/issues/{{ issue.id }}/comments" hx-target="#issue-detail">
+      <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+      <label for="comment-body">Comment</label>
+      <textarea class="f" id="comment-body" name="body" rows="2"></textarea>
+      <button class="b" type="submit">Add comment</button>
+    </form>
+    {% else %}
+    <p class="mu">You can't comment on this issue.</p>
+    {% endif %}
+  </div>
+  <div>
+    <div class="k" hx-target="#issue-detail" hx-include="#triage-form">
+      <h3>Status: {{ issue.status_word }}</h3>
+      {% if issue.resolved %}<span class="c nt">Resolved</span>{% endif %}
+      {% if issue.triage_reason %}
+      <p class="m mu">"{{ issue.triage_reason }}" &mdash; {{ issue.triager }}, {{ issue.triaged_at | timeago }}</p>
+      {% endif %}
+      <form id="triage-form" method="post" action="/projects/{{ project.key }}/issues/{{ issue.id }}/triage">
+        <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+        {% for button in status_buttons %}
+        <button class="b" type="submit" name="status" value="{{ button.status }}"
+                hx-post="/projects/{{ project.key }}/issues/{{ issue.id }}/triage"{% if not button.enabled %} disabled{% endif %}>{{ button.label }}</button>
+        {% endfor %}
+        {% if can_flag %}
+        <label for="triage-reason">Reason</label>
+        <input class="f" id="triage-reason" name="reason"
+               placeholder="Required for false positive, accepted risk and won't fix (10+ characters)">
+        {% else %}
+        <p class="mu" style="margin:8px 0 0">You can't change the status. Ask someone who can.</p>
+        {% endif %}
+      </form>
+    </div>
+    <div class="k" style="margin-top:14px" hx-target="#issue-detail">
+      <h3>Assignee</h3>
+      {% if can_assign %}
+      <form method="post" action="/projects/{{ project.key }}/issues/{{ issue.id }}/assign"
+            hx-post="/projects/{{ project.key }}/issues/{{ issue.id }}/assign">
+        <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+        <label for="assignee-select">Assign to</label>
+        <select class="f" id="assignee-select" name="assignee_id">
+          <option value="">Unassigned</option>
+          {% for member in members %}
+          <option value="{{ member.id }}"{% if member.selected %} selected{% endif %}>{{ member.name }}</option>
+          {% endfor %}
+        </select>
+        <button class="b" type="submit">Assign</button>
+      </form>
+      {% else %}
+      <p>{{ issue.assignee or "Unassigned" }}</p>
+      {% endif %}
+    </div>
+    {% if show_request %}
+    <div class="k" style="margin-top:14px">
+      <h3>Request an action</h3>
+      <form method="post" action="/projects/{{ project.key }}/issues/{{ issue.id }}/requests">
+        <label for="request-action">Action</label>
+        <select class="f" id="request-action" name="action">
+          {% for action in request_actions %}<option value="{{ action.value }}">{{ action.label }}</option>{% endfor %}
+        </select>
+        <label for="request-target">Ask</label>
+        <select class="f" id="request-target" name="target">
+          {% for target in request_targets %}<option value="{{ target.id }}">{{ target.name }} (can {{ target.capability }})</option>{% endfor %}
+        </select>
+        <label for="request-message">Message</label>
+        <textarea class="f" id="request-message" name="message" rows="3"></textarea>
+        <button class="b p" type="submit">Send request</button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+</div>

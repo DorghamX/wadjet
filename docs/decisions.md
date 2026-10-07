@@ -640,3 +640,71 @@ Format: date, task, decision, reason.
   migrations. Shared files (`main.py`, `TASKS.md`, `decisions.md`,
   `wadjet.css`) are append-only per track and merged by Track B.
   Details: `~/projects/wadjet-files/track-a-brief.md`.
+- **T4.4 - Buttons render every vocabulary transition, not just the design's
+  three.** The design's mock shows the *no-permission* view with three
+  example buttons; every status must be reachable from the page, so
+  "Mark confirmed" (beyond the mock) and "Reopen" exist and flag.confirm /
+  flag.reopen (section 7) have a control. The current status drops out of
+  the row.
+- **T4.4 - The timeline is a merge, not a table.** Events (excluding
+  `comment`, `request_created`, `request_resolved`) UNION live comments
+  UNION live requests, newest first - so comment and request events are
+  never written (they would double every row). `assigned` events carry the
+  assignee's name denormalized, and the seed's older `triaged` event type
+  renders beside `status_changed` with the same sentences. Reason rule:
+  >= 10 chars for false positive / accepted risk / won't fix
+  (REASON_MIN=10, REASON_MAX=2000, COMMENT_MAX=10000, MAX_BULK=500).
+- **T4.4 - Bulk triage is a plain form post, never htmx.** One transaction,
+  validate-then-write, so a refusal re-renders the list with the design's
+  `.ban` banner and the words "Nothing changed." as a guarantee - every
+  status, reason and permission check runs before the first UPDATE.
+  Success redirects back to the same filtered list (PRG). The bar, its
+  checkboxes and the select-all ("every issue these filters match",
+  server-side, capped at MAX_BULK) render only for someone holding at
+  least one flag permission. The bulk form is the *sibling* of the GET
+  search form: its controls reach it with the `form="bulk-form"` attribute
+  (legal from inside any element), because a nested form cannot exist and
+  the search form must stay a GET. Field is `bulk_status` so it can never
+  clash with the `status` filter.
+- **T4.4 - The request panel ships as markup now and works at T5.1.** It
+  renders only for someone who lacks >= 1 flag action AND holds
+  issue.request; targets are the union of each missing action's permission
+  holders, labelled with what they can do ("Carol Reyes (can confirm
+  issues, flag false positives, ...)"). Its form posts to T5.1's
+  `/requests` route, which does not exist yet - the form is dead between
+  these commits and that is deliberate (guide: vertical slices leave a
+  visible seam, never a fake button). Action values are *statuses*
+  ("confirmed"), the same words the triage buttons submit, so "what you are
+  missing" lines up with `allowed_status_actions`; T5.1 normalizes the
+  seed's older `flag_*` request vocabulary to section 4's.
+- **T4.4 - Assignment is a third `.k` rail panel.** The design's detail
+  window omits an assign control, but section 14 requires every workflow
+  control to be visible: status, assignee, request - same card style.
+  Selecting any member satisfies section 8 ("assign to any project
+  member"); a non-member is refused with that sentence. The id-addressed
+  API endpoints answer unknown id, other project and no grant with one
+  identical "No such issue" 404 (T4.2's rule carried to issue ids).
+- **T4.4 - Comments: markdown-it commonmark with `html: false`, then nh3
+  clean over a restricted tag set** - two layers, because stored raw is not
+  the same as rendered safe. Stored exactly as typed (an edit starts from
+  your text), sanitized at render; edit own only; delete = author or admin
+  (can(PROJECT_ADMIN) covers the global admin); deleted comments keep their
+  row (`deleted_at`) and leave the timeline.
+- **T4.4 - The HTMX + CSRF pattern for every control.** Buttons carry
+  `hx-post` with `hx-include="#triage-form"` because the vendored htmx
+  2.0.5 has no submitter support (verified: zero hits) - a form-level
+  hx-post would drop the clicked button's `name=status`. Without
+  JavaScript the same form posts natively and gets PRG; errors re-render
+  the whole page (or the htmx partial) with the banner, status 400.
+  API audit action names stay `flag.{status}`, except open = `flag.reopen`.
+- **T4.4 - `project_members` and `permission_holders` dropped their
+  redundant `SELECT DISTINCT`.** PostgreSQL rejects `ORDER BY` an
+  expression that is not in the select list of a DISTINCT query, and both
+  queries are `FROM users` with only EXISTS subqueries - a join-free
+  outer query cannot duplicate a row, so the DISTINCT could never do
+  anything but break the sort.
+- **T4.4 - Mutating tests restore the seed they found.** `seed_demo` is
+  idempotent and the list tests count the seed (11 open, 1 blocker ...),
+  so both new test files snapshot the mutable issue columns and the
+  append-only tables' high-water marks, and put them back on the way out;
+  test-created users and sessions stay, as the suite has always allowed.

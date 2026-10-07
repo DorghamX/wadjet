@@ -11,4 +11,12 @@
       hx-get="/projects/{{ project.key }}/issues" hx-target="#issues-body" hx-push-url="true">
 {% include "issues_body.html" %}
 </form>
+{# Its own form, so the search form above stays a GET: the checkboxes, the #}
+{# status select and the reason field point here with the form attribute,   #}
+{# which is legal from inside any element - no nested forms, and a plain    #}
+{# browser post works with JavaScript off.                                  #}
+<form id="bulk-form" method="post" action="/projects/{{ project.key }}/issues/bulk">
+  <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+  {% for name, value in filters.params().items() %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+</form>
 {% endblock %}

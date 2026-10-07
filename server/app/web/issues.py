@@ -20,15 +20,21 @@ from typing import Any
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from app.issues import (
+    MAX_BULK,
     PRESENCES,
     SEVERITIES,
     TRIAGE_STATUSES,
+    BadIssueAction,
     BadIssueFilter,
     IssueFilters,
+    IssuePermissionDenied,
+    allowed_status_actions,
+    bulk_triage,
     facet_counts,
+    matching_issue_ids,
     query_issues,
 )
 from app.projects import visible_project
@@ -45,6 +51,22 @@ STATUS_CHIPS = {
     "accepted_risk": ("wn", "Accepted risk"),
     "wont_fix": ("nt", "Won't fix"),
 }
+
+#: The design's button words, shared by the detail page and the bulk bar.
+#: "Mark confirmed" and "Reopen" are ours: the design's mock shows a
+#: no-permission view with three example buttons, but every status in the
+#: vocabulary must be reachable from a page - otherwise flag.confirm and
+#: flag.reopen (section 7) would have no control anywhere (sections 7, 8).
+BUTTON_LABELS = {
+    "open": "Reopen",
+    "confirmed": "Mark confirmed",
+    "false_positive": "Mark false positive",
+    "accepted_risk": "Accept risk",
+    "wont_fix": "Won't fix",
+}
+
+#: Order actions are offered in: the transitions first, reopening last.
+ACTION_ORDER = ("confirmed", "false_positive", "accepted_risk", "wont_fix", "open")
 
 #: The design's colored left edge (``.sv``) plus the word, per severity.
 SEVERITY_EDGES = {
@@ -218,6 +240,60 @@ def _not_found(request: Request, user: PageUser, key: str) -> HTMLResponse:
     )
 
 
+def _page_context(
+    request: Request, user: PageUser, project: Any, filters: IssueFilters
+) -> dict[str, Any]:
+    """The list page's whole context.
+
+    One builder for the full page, the htmx partials *and* a bulk action's
+    error answer - three renderings that must never drift apart. The bulk
+    controls only appear for someone who may set at least one status
+    (section 8's permission, checked per project).
+    """
+    engine = request.app.state.engine
+    project_id = int(project["id"])
+    rows, total = query_issues(engine, project_id=project_id, filters=filters)
+    counts = facet_counts(engine, project_id=project_id)
+    previous, following, pages = _page_urls(filters, total)
+    allowed = allowed_status_actions(engine, user_id=user.id, project_id=project_id)
+    filtered = bool(
+        filters.status
+        or filters.severity
+        or filters.category
+        or filters.tool
+        or filters.file
+        or filters.presence
+        or filters.assignee
+        or filters.text
+    )
+    return {
+        "user": user,
+        "nav": "projects",
+        "project": {"key": project["key"], "name": project["name"]},
+        "filters": filters,
+        "filtered": filtered,
+        "clear_url": _url(filters, **_CLEAR_KEYS),
+        "total": total,
+        "issues": [_row_view(row) for row in rows],
+        "facets": _facet_groups(filters, counts),
+        "sorts": list(SORT_LABELS.items()),
+        "prev_url": previous,
+        "next_url": following,
+        "page_count": pages,
+        "first_page_url": _url(filters, page=None),
+        "bulk_statuses": [(s, BUTTON_LABELS[s]) for s in ACTION_ORDER if s in allowed],
+        "error": None,
+    }
+
+
+def _ip(request: Request) -> str | None:
+    return request.client.host if request.client else None
+
+
+#: The bulk form's own fields; everything else it posts is a view filter.
+_BULK_KEYS = {"csrf_token", "bulk_status", "reason", "ids", "all"}
+
+
 @router.get("/projects/{key}/issues")
 def issues_page(
     request: Request, key: str, user: PageUser = Depends(require_page_user)
@@ -237,36 +313,7 @@ def issues_page(
     except BadIssueFilter as exc:
         return _bad_filter(request, user, key, str(exc))
 
-    project_id = int(project["id"])
-    rows, total = query_issues(engine, project_id=project_id, filters=filters)
-    counts = facet_counts(engine, project_id=project_id)
-    previous, following, pages = _page_urls(filters, total)
-    filtered = bool(
-        filters.status
-        or filters.severity
-        or filters.category
-        or filters.tool
-        or filters.file
-        or filters.presence
-        or filters.assignee
-        or filters.text
-    )
-    context: dict[str, Any] = {
-        "user": user,
-        "nav": "projects",
-        "project": {"key": project["key"], "name": project["name"]},
-        "filters": filters,
-        "filtered": filtered,
-        "clear_url": _url(filters, **_CLEAR_KEYS),
-        "total": total,
-        "issues": [_row_view(row) for row in rows],
-        "facets": _facet_groups(filters, counts),
-        "sorts": list(SORT_LABELS.items()),
-        "prev_url": previous,
-        "next_url": following,
-        "page_count": pages,
-        "first_page_url": _url(filters, page=None),
-    }
+    context = _page_context(request, user, project, filters)
     if request.headers.get("hx-request") == "true":
         template = (
             "issues_table.html"
@@ -278,4 +325,61 @@ def issues_page(
     return render(request, template, context=context)
 
 
-__all__ = ["router"]
+@router.post("/projects/{key}/issues/bulk")
+async def issues_bulk_action(
+    request: Request, key: str, user: PageUser = Depends(require_page_user)
+) -> Response:
+    """Bulk triage (section 8): many issues, one status, one reason.
+
+    A plain form post - no htmx - so it works without JavaScript: success
+    redirects back to the same filtered list (POST/Redirect/GET), a refusal
+    re-renders it with the reason in a banner. Validation (status, reason,
+    permission) all runs before the first write, so the banner's "Nothing
+    changed" is a promise, not a hope: either every selected issue changes
+    or none does.
+    """
+    engine = request.app.state.engine
+    project = visible_project(engine, key=key, user_id=user.id)
+    if project is None:
+        return _not_found(request, user, key)
+    form = await request.form()
+    pairs = [(name, str(value)) for name, value in form.multi_items() if name not in _BULK_KEYS]
+    try:
+        filters = IssueFilters.from_query(pairs)
+    except BadIssueFilter as exc:
+        return _bad_filter(request, user, key, str(exc))
+    error: str | None = None
+    try:
+        if form.get("all"):
+            ids = matching_issue_ids(
+                engine,
+                project_id=int(project["id"]),
+                filters=filters,
+                cap=MAX_BULK + 1,
+            )
+            if len(ids) > MAX_BULK:
+                raise BadIssueAction(f"Select at most {MAX_BULK} issues at a time.")
+        else:
+            raw = [str(value) for value in form.getlist("ids")]
+            if any(not value.isdigit() for value in raw):
+                raise BadIssueAction("That selection does not look like issue ids.")
+            ids = [int(value) for value in raw]
+        bulk_triage(
+            engine,
+            project_id=int(project["id"]),
+            issue_ids=ids,
+            status=str(form.get("bulk_status") or ""),
+            reason=str(form.get("reason") or ""),
+            actor_id=user.id,
+            ip=_ip(request),
+        )
+    except (BadIssueAction, IssuePermissionDenied) as exc:
+        error = str(exc)
+    if error is not None:
+        context = _page_context(request, user, project, filters)
+        context["error"] = error
+        return render(request, "issues.html", context=context, status_code=400)
+    return RedirectResponse(url=f"/projects/{key}/issues{_url(filters)}", status_code=303)
+
+
+__all__ = ["BUTTON_LABELS", "router"]

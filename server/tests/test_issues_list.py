@@ -135,7 +135,10 @@ def test_issues_page_is_the_design_table(client: TestClient, engine: Engine) -> 
     # with its rule on the muted second line and path:line in the middle.
     first = rows[0]
     assert '<span class="sv s1">Blocker</span>' in first
-    assert "Private Key<br>" in first
+    # The title now links to the issue's own page (T4.4); the muted rule line
+    # and path:line keep their place below and beside it.
+    assert 'href="/projects/payments/issues/' in first
+    assert "Private Key</a><br>" in first
     assert '<span class="mu">detect-secrets Private Key</span>' in first
     assert '<td class="m">src/config/deploy_key.pem:1</td>' in first
     assert '<span class="c nt">Open</span>' in first
