@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}{{ tab_label }} - {{ project.name }} - Wadjet{% endblock %}
+{% block content %}
+<div class="pagehead">
+  <h1>{{ project.name }}</h1>
+  <span class="m mu">/projects/{{ project.key }}/settings/{{ tab }}</span>
+</div>
+
+<div class="tabs" role="navigation" aria-label="Project settings">
+  {% for item in tabs %}
+  <a href="/projects/{{ project.key }}/settings/{{ item.slug }}"{% if item.on %} class="on" aria-current="page"{% endif %}>{{ item.label }}</a>
+  {% endfor %}
+</div>
+
+{% if notice %}<p class="formnote ok">{{ notice }}</p>{% endif %}
+{% if error %}<p class="formnote bad" role="alert">{{ error }}</p>{% endif %}
+
+{% block settings %}{% endblock %}
+{% endblock %}

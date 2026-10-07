@@ -38,21 +38,21 @@ code, tests and one docs line exist, `make lint test` is green and the commit me
 - [x] **T4.2 (M)** Projects list and overview
 - [x] **T4.3 (M)** Issues list with HTMX filters
 - [x] **T4.4 (L)** Issue detail: triage, assignment, comments, timeline
-- [ ] **T4.5 (M)** Project settings pages
-- [ ] **T4.6 (M)** Gates pages
-- [ ] **T4.7 (M)** Admin users, groups, permission matrix page
-- [ ] **T4.8 (S)** Analyses history
-- [ ] **T4.9 (S)** Profile and password page ``/me`` (section 14 route; no id in 17.3)
+- [x] **T4.5 (M)** Project settings pages
+- [x] **T4.6 (M)** Gates pages
+- [x] **T4.7 (M)** Admin users, groups, permission matrix page
+- [x] **T4.8 (S)** Analyses history
+- [x] **T4.9 (S)** Profile and password page ``/me`` (section 14 route; no id in 17.3)
 
 ## Phase 5: Collaboration
 - [x] **T5.1 (M)** Request-action workflow
 - [x] **T5.2 (M)** Notifications and inbox
 - [x] **T5.3 (S)** `@mentions`
-- [ ] **T5.4 (S)** Audit log page
-- [ ] **T5.5 (M)** CSV and SARIF export, quality gate badge
+- [x] **T5.4 (S)** Audit log page
+- [x] **T5.5 (M)** CSV and SARIF export, quality gate badge
 
 ## Phase 6: Release
 - [x] **T6.1 (M)** Docs: README quickstart, operations, writing-an-adapter, supported tools
-- [ ] **T6.2 (S)** `scanner-compat.yml` weekly workflow
-- [ ] **T6.3 (S)** Image build and push workflow
+- [x] **T6.2 (S)** `scanner-compat.yml` weekly workflow
+- [x] **T6.3 (S)** Image build and push workflow
 - [ ] **T6.4 (S)** Walk through section 18

@@ -19,6 +19,7 @@
 <div class="tabs">
   <a class="on" href="/projects/{{ project.key }}">Overview</a>
   <a href="/projects/{{ project.key }}/issues">Issues</a>
+  {% if is_project_admin %}<a href="/projects/{{ project.key }}/settings/general">Settings</a>{% endif %}
 </div>
 
 {% if has_analyses %}

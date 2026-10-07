@@ -1,0 +1,96 @@
+{% extends "admin_shell.html" %}
+{% block admin %}
+<p class="mu">Everyone who can sign in. Admins hold every permission everywhere; everyone
+  else gets theirs through project grants, directly or through a group.</p>
+
+<div class="tablewrap">
+<table class="t" style="min-width:980px">
+  <tr>
+    <th scope="col">User</th>
+    <th scope="col">Role</th>
+    <th scope="col">Status</th>
+    <th scope="col">Last seen</th>
+    <th scope="col">Groups</th>
+    <th scope="col">Edit</th>
+  </tr>
+  {% for person in users %}
+  {% set e = form and form.get('user_id') == person.id %}
+  <tr>
+    <td>
+      <b>{{ person.display_name or person.username }}</b><br>
+      <span class="m">@{{ person.username }}</span><br>
+      <span class="m mu">{{ person.email }}</span>
+    </td>
+    <td>{% if person.is_admin %}<span class="c ok">Admin</span>{% else %}<span class="c nt">Member</span>{% endif %}</td>
+    <td>{% if person.is_active %}<span class="c ok">Active</span>{% else %}<span class="c bad">Deactivated</span>{% endif %}</td>
+    <td>{{ person.last_login_at|timeago }}</td>
+    <td>{% if person.groups %}{{ person.groups|join(", ") }}{% else %}<span class="mu">None</span>{% endif %}</td>
+    <td>
+      <form method="post" action="/admin/users/{{ person.id }}">
+        <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+        <label for="u{{ person.id }}-name">Display name</label>
+        <input class="f" id="u{{ person.id }}-name" name="display_name" maxlength="255"
+               value="{{ form.display_name if e else (person.display_name or '') }}">
+        <label for="u{{ person.id }}-email">Email</label>
+        <input class="f" id="u{{ person.id }}-email" name="email" maxlength="255"
+               value="{{ form.email if e else person.email }}">
+        <label for="u{{ person.id }}-role">Role</label>
+        <select class="f" id="u{{ person.id }}-role" name="role">
+          {% set role = form.role if e else ('admin' if person.is_admin else 'member') %}
+          <option value="member"{% if role == 'member' %} selected{% endif %}>Member</option>
+          <option value="admin"{% if role == 'admin' %} selected{% endif %}>Admin</option>
+        </select>
+        <label for="u{{ person.id }}-status">Status</label>
+        <select class="f" id="u{{ person.id }}-status" name="status">
+          {% set state = form.status if e else ('active' if person.is_active else 'inactive') %}
+          <option value="active"{% if state == 'active' %} selected{% endif %}>Active</option>
+          <option value="inactive"{% if state == 'inactive' %} selected{% endif %}>Deactivated</option>
+        </select>
+        <label for="u{{ person.id }}-password">New password (optional)</label>
+        <input class="f" id="u{{ person.id }}-password" name="password" type="password"
+               autocomplete="new-password">
+        <button class="b p" type="submit">Save</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+{% if not users %}
+<div class="k" style="margin-top:14px">
+  <h3>No users yet</h3>
+  <p class="mu">Create the first account below.</p>
+</div>
+{% endif %}
+
+<div class="k" style="margin-top:14px">
+  <h3>New user</h3>
+  {% set fresh = form and not form.get('user_id') %}
+  <form method="post" action="/admin/users">
+    <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+    <label for="nu-username">Username</label>
+    <input class="f" id="nu-username" name="username" maxlength="128" placeholder="jamie"
+           value="{{ form.username if fresh else '' }}">
+
+    <label for="nu-email">Email</label>
+    <input class="f" id="nu-email" name="email" maxlength="255" placeholder="jamie@example.com"
+           value="{{ form.email if fresh else '' }}">
+
+    <label for="nu-name">Display name</label>
+    <input class="f" id="nu-name" name="display_name" maxlength="255" placeholder="Jamie Rivera"
+           value="{{ form.display_name if fresh else '' }}">
+
+    <label for="nu-password">Password</label>
+    <input class="f" id="nu-password" name="password" type="password" autocomplete="new-password">
+
+    <label class="check">
+      <input type="checkbox" id="nu-admin" name="is_admin" value="on"{% if fresh and form.is_admin %} checked{% endif %}>
+      <b>Admin</b>
+    </label>
+    <p class="mu">Admins manage users, groups and gates on every project. Everyone else
+      needs a grant on each project they work on.</p>
+
+    <button class="b p" type="submit">Create user</button>
+  </form>
+</div>
+{% endblock %}

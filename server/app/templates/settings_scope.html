@@ -1,0 +1,26 @@
+{% extends "settings_shell.html" %}
+{% block settings %}
+<p class="mu">Where the scanners look. Exclusions apply to every scanner, and the server
+  drops matching findings again as defence in depth.</p>
+
+<form method="post" action="/projects/{{ project.key }}/settings/scope">
+  <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+  <div class="g g2">
+    <div>
+      <h3>Include</h3>
+      <p class="mu">Paths to scan, one per line. <span class="m">.</span> means the whole
+        repository.</p>
+      <textarea class="f" id="ps-include" name="include" rows="5" aria-label="Include paths">{{ values.include }}</textarea>
+    </div>
+    <div>
+      <h3>Excluded from scans</h3>
+      <p class="mu">One pattern per line, gitignore style. These files are skipped by every
+        scanner. Dependency findings have no path and are never excluded - flag those
+        instead.</p>
+      <textarea class="f" id="ps-exclude" name="exclude" rows="10" aria-label="Exclusion patterns">{{ values.exclude }}</textarea>
+      <p class="mu">Editable defaults: <span class="m">{{ defaults|join(', ') }}</span></p>
+    </div>
+  </div>
+  <p style="margin-top:12px"><button class="b p" type="submit">Save settings</button></p>
+</form>
+{% endblock %}

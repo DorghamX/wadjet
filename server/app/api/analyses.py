@@ -318,3 +318,28 @@ async def upload_analysis(
     _reject_secret_leaks(upload)
     # Blocking database work off the event loop; the app's endpoints are sync.
     return await run_in_threadpool(_ingest, request.app.state.engine, upload, token)
+
+
+@router.get("/api/v1/analyses/{analysis_id}", response_model=dict)
+def get_analysis(
+    analysis_id: int, request: Request, token: dict[str, Any] = Depends(require_project_token)
+) -> dict[str, Any]:
+    """Return one analysis with its gate result and metrics (section 11)."""
+    engine = request.app.state.engine
+    with engine.begin() as conn:
+        row = (
+            conn.execute(
+                text(
+                    "SELECT id, project_id, commit_sha, ci_url, started_at, finished_at, "
+                    "status, scanner_runs, metrics, gate_status, gate_details, excluded_count, "
+                    "created_at FROM analyses WHERE id = :aid AND project_id = :pid"
+                ),
+                {"aid": analysis_id, "pid": int(token["project_id"])},
+            )
+            .mappings()
+            .first()
+        )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+    # A project token may only read its own project's analyses (section 13).
+    return dict(row)
