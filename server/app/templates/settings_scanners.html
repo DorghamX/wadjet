@@ -1,0 +1,61 @@
+{% extends "settings_shell.html" %}
+{% block settings %}
+<p class="mu">Scanner options are structured fields, not command-line flags: the server
+  validates every value, so nothing here can smuggle an argument into a scanner.
+  Exclusions live on the Scope tab and apply to all of them.</p>
+
+<form method="post" action="/projects/{{ project.key }}/settings/scanners">
+  <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+  <div class="tablewrap">
+  <table class="t">
+    <tr>
+      <th scope="col">Scanner</th>
+      <th scope="col">Enabled</th>
+      <th scope="col">Options</th>
+    </tr>
+    {% for scanner in scanners %}
+    <tr>
+      <td><b>{{ scanner.label }}</b></td>
+      <td>
+        <label class="check">
+          <input type="checkbox" name="{{ scanner.key }}_enabled"{% if scanner.enabled %} checked{% endif %}>
+          On
+        </label>
+      </td>
+      <td>
+        {% for field in scanner.fields %}
+        <label for="ps-{{ field.name }}">{{ field.label }}</label>
+        {% if field.choices %}
+        <select class="f" id="ps-{{ field.name }}" name="{{ field.name }}">
+          {% for choice, label in field.choices %}
+          <option value="{{ choice }}"{% if field.value == choice %} selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        {% else %}
+        <input class="f" id="ps-{{ field.name }}" name="{{ field.name }}" value="{{ field.value }}" placeholder="{{ field.hint }}">
+        {% endif %}
+        {% endfor %}
+        <label for="ps-{{ scanner.key }}-timeout">Timeout (seconds)</label>
+        <input class="f" id="ps-{{ scanner.key }}-timeout" name="{{ scanner.key }}_timeout" value="{{ scanner.timeout }}" inputmode="decimal" placeholder="Default">
+        {% if scanner.note %}<p class="mu">{{ scanner.note }}</p>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+
+  <div class="k" style="margin-top:14px">
+    <h3>Whole scan</h3>
+    <label class="check">
+      <input type="checkbox" name="fail_on_scanner_error"{% if values.fail_on_scanner_error %} checked{% endif %}>
+      A scanner error fails the gate
+    </label>
+    <p class="mu">When it is off, a scanner error leaves the analysis incomplete instead of
+      failing the gate.</p>
+    <label for="ps-timeout">Default timeout (seconds)</label>
+    <input class="f" id="ps-timeout" name="timeout_seconds" value="{{ values.timeout_seconds }}" inputmode="decimal">
+  </div>
+
+  <p style="margin-top:12px"><button class="b p" type="submit">Save settings</button></p>
+</form>
+{% endblock %}

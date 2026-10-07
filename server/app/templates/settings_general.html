@@ -1,0 +1,37 @@
+{% extends "settings_shell.html" %}
+{% block settings %}
+<div class="k">
+  <h3>General</h3>
+  <form method="post" action="/projects/{{ project.key }}/settings/general">
+    <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+    <label for="ps-name">Name</label>
+    <input class="f" id="ps-name" name="name" value="{{ form.name }}" required maxlength="255">
+
+    <label for="ps-key">Key</label>
+    <input class="f" id="ps-key" value="{{ project.key }}" readonly aria-describedby="ps-key-hint">
+    <p class="mu" id="ps-key-hint">The key is the URL of every page of this project and the
+      identity its findings are fingerprinted against. It cannot change.</p>
+
+    <label for="ps-desc">Description</label>
+    <textarea class="f" id="ps-desc" name="description" rows="3" maxlength="2000">{{ form.description }}</textarea>
+
+    <button class="b p" type="submit">Save settings</button>
+  </form>
+</div>
+
+{% if can_delete %}
+<div class="danger">
+  <h3>Delete this project</h3>
+  <p>Deleting removes the project's analyses, issues, comments, tokens and permissions for
+    everyone. This cannot be undone.</p>
+  <form method="post" action="/projects/{{ project.key }}/settings/general/delete">
+    <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+    <label for="ps-confirm">Type <span class="m">{{ project.key }}</span> to confirm</label>
+    <input class="f" id="ps-confirm" name="confirm_key" placeholder="{{ project.key }}" autocomplete="off">
+    <button class="b del" type="submit">Delete project</button>
+  </form>
+</div>
+{% else %}
+<p class="mu">Only an admin can delete a project.</p>
+{% endif %}
+{% endblock %}

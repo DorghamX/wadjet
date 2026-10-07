@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import Engine, text
 
+from app.permissions import Permission, can
 from app.projects import (
     DuplicateProjectKey,
     ProjectKeyError,
@@ -425,6 +426,9 @@ def project_overview(
             "name": project["name"],
             "description": project["description"],
         },
+        # The tabs row only offers what its reader can open (section 7:
+        # the UI hides what you cannot do); Settings needs project.admin.
+        "is_project_admin": can(engine, user.id, Permission.PROJECT_ADMIN, int(project["id"])),
         "banner": _banner(latest),
         "cards": _cards(metrics, false_positives) if latest else None,
         "trend": _trend(list(analyses)),

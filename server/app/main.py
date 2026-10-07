@@ -44,6 +44,7 @@ from app.web.routes import (
     timeago,
 )
 from app.web.routes import router as pages_router
+from app.web.settings import router as settings_pages_router  # T4.5
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -105,6 +106,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.include_router(pages_router)
     application.include_router(project_pages_router)
     application.include_router(issue_pages_router)
+    application.include_router(settings_pages_router)  # T4.5
 
     @application.post("/session", status_code=201)
     def login(

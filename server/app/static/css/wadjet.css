@@ -105,3 +105,27 @@ label{display:block;font-size:13px;color:var(--mut)}
 .ls a.on{color:var(--acc);font-weight:600}
 .ls span{color:var(--mut)}
 .gr label{color:var(--mut);font-size:13px}
+
+/* --- T4.5: project settings (design "Project settings", "Members") ------ */
+
+/* One line under the tab row: what a save did, or exactly why it did not. */
+.formnote{margin:0 0 12px;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--sf)}
+.formnote.ok{border-color:var(--ok);background:var(--okb);color:var(--ok)}
+.formnote.bad{border-color:var(--bad);background:var(--badb);color:var(--bad)}
+
+/* Checkboxes and radios read inline with their words, the way the design's
+   switches do, and stay on the focus ring the rest of the form gets. */
+.check{display:flex;gap:8px;align-items:center;font-size:14px;color:var(--ink);margin:2px 0 8px}
+.check input{width:auto;margin:0;accent-color:var(--acc)}
+.check b{font-weight:600}
+
+/* Danger zone (section 10): its own box, its own colour, its own verb. */
+.danger{border:1px solid var(--bad);border-radius:8px;padding:14px;margin-top:24px;background:var(--sf)}
+.danger h3{color:var(--bad);margin-top:0}
+.danger .f{max-width:360px}
+.b.del{background:var(--badb);border-color:var(--bad);color:var(--bad)}
+
+/* Inputs inside a settings table stay a readable width instead of stretching
+   across the whole options cell. */
+.t .f{max-width:340px}
+.t td .check{margin-bottom:4px}

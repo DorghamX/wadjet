@@ -1,52 +1,49 @@
-"""Project settings (section 10): read and write, validated server-side.
+"""Project settings (sections 10, 12): read and write, validated server-side.
 
-``GET /api/v1/projects/{project_id}/settings`` needs ``project.browse``,
-``PUT`` needs ``project.admin``. The body is a complete ``ProjectSettings``
-object - the schema fills defaults for anything the client omits - so the
-stored ``projects.settings`` JSON is valid by construction, and unknown
-keys (a smuggled free-form CLI arg, an unknown scanner) never land.
-Every write lands in the audit log (section 15.4: settings changes).
+Two shapes serve the same rules. ``GET/PUT /api/v1/projects/{project_id}/settings``
+is the body of section 10 as a whole: a complete ``ProjectSettings`` object
+that the schema validates, so the stored JSON is valid by construction and
+unknown keys (a smuggled free-form CLI arg, an unknown scanner) never land.
+``GET/PATCH/DELETE /api/v1/projects/{key}`` is the project itself: what it is
+called, which gate it uses, and the danger zone. Tokens and members hang off
+the same key. Every write lands in the audit log (section 13).
 """
 
 from __future__ import annotations
 
-from datetime import datetime
+from collections.abc import Mapping
+from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import text
 
-from app.audit import write_audit
 from app.deps import get_current_user
-from app.permissions import Permission, can
+from app.permissions import PERMISSION_TEMPLATES, Permission, can
 from app.projects import (
     DuplicateProjectKey,
+    MemberError,
     ProjectKeyError,
+    UnknownGate,
     create_project,
+    delete_project,
+    grant,
+    list_members,
+    revoke,
+    save_settings,
+    set_gate,
     stored_settings,
+    subject_kind,
+    update_project,
     validate_key,
+    visible_project,
     visible_projects,
 )
+from app.tokens import create_token, list_tokens, revoke_token
 from wadjet_schema import ProjectSettings
 
 router = APIRouter()
-
-
-def _flatten(values: dict[str, Any], prefix: str = "") -> dict[str, Any]:
-    flat: dict[str, Any] = {}
-    for key, value in values.items():
-        name = f"{prefix}{key}"
-        if isinstance(value, dict):
-            flat.update(_flatten(value, name + "."))
-        else:
-            flat[name] = value
-    return flat
-
-
-def _changed_keys(old: dict[str, Any], new: dict[str, Any]) -> list[str]:
-    before, after = _flatten(old), _flatten(new)
-    return sorted(key for key in set(before) | set(after) if before.get(key) != after.get(key))
 
 
 def _require_permission(
@@ -86,11 +83,10 @@ def put_project_settings(
     engine = request.app.state.engine
     with engine.begin() as conn:
         row = conn.execute(
-            text("SELECT settings FROM projects WHERE id = :pid"), {"pid": project_id}
+            text("SELECT id FROM projects WHERE id = :pid"), {"pid": project_id}
         ).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="Project not found")
-    old = stored_settings(row[0])
     _require_permission(
         engine,
         user,
@@ -98,21 +94,13 @@ def put_project_settings(
         Permission.PROJECT_ADMIN,
         "project.admin permission required",
     )
-    with engine.begin() as conn:
-        conn.execute(
-            text("UPDATE projects SET settings = :settings WHERE id = :pid"),
-            {"settings": payload.model_dump_json(), "pid": project_id},
-        )
-    changed = _changed_keys(old.model_dump(mode="json"), payload.model_dump(mode="json"))
-    if changed:
-        write_audit(
-            engine,
-            action="project.settings_update",
-            actor_id=int(user["user_id"]),
-            target_type="project",
-            target_id=project_id,
-            details={"changed": changed},
-        )
+    save_settings(
+        engine,
+        project_id=project_id,
+        payload=payload,
+        actor_id=int(user["user_id"]),
+        ip=request.client.host if request.client else None,
+    )
     return payload
 
 
@@ -241,6 +229,437 @@ def post_projects(
         "name": payload.name,
         "description": payload.description,
     }
+
+
+# --- the project itself: ``GET/PATCH/DELETE /api/v1/projects/{key}`` --------
+
+
+def _project_or_404(engine: Any, key: str, user: dict[str, Any]) -> Mapping[str, Any]:
+    """The project row when it exists *and* this session may browse it.
+
+    Section 7 keeps the two failures indistinguishable: a caller who cannot
+    see a project must not learn that its key exists.
+    """
+    project = visible_project(engine, key=key, user_id=int(user["user_id"]))
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return project
+
+
+def _project_out(engine: Any, project_id: int) -> ProjectOut:
+    with engine.connect() as conn:
+        row = (
+            conn.execute(
+                text(
+                    "SELECT p.id, p.key, p.name, p.description, p.settings, p.created_at, "
+                    "p.gate_id, g.name AS gate_name "
+                    "FROM projects p "
+                    "LEFT JOIN quality_gates g ON g.id = p.gate_id "
+                    "WHERE p.id = :pid"
+                ),
+                {"pid": project_id},
+            )
+            .mappings()
+            .first()
+        )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return ProjectOut(
+        id=int(row["id"]),
+        key=str(row["key"]),
+        name=str(row["name"]),
+        description=row["description"],
+        gate_id=row["gate_id"],
+        gate_name=row["gate_name"],
+        settings=stored_settings(row["settings"]),
+        created_at=row["created_at"],
+    )
+
+
+class ProjectOut(BaseModel):
+    """One project: identity, gate choice, settings (section 12)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    key: str
+    name: str
+    description: str | None = None
+    #: ``null`` means "the built-in default gate" - the fallback section 9
+    #: already applies, reported rather than hidden.
+    gate_id: int | None = None
+    gate_name: str | None = None
+    settings: ProjectSettings
+    created_at: datetime
+
+
+class ProjectPatch(BaseModel):
+    """Partial update: only the fields present in the body are written.
+
+    ``key`` is accepted so that an attempt to move it answers with section
+    10's own words instead of "unknown field" - but it is never moved.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    key: str | None = Field(default=None, max_length=64)
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=2000)
+    gate_id: int | None = None
+
+
+@router.get("/api/v1/projects/{key}", response_model=ProjectOut)
+def get_project(
+    key: str, request: Request, user: dict[str, Any] = Depends(get_current_user)
+) -> ProjectOut:
+    """One project with its settings and gate (section 12)."""
+    engine = request.app.state.engine
+    project = _project_or_404(engine, key, user)
+    return _project_out(engine, int(project["id"]))
+
+
+@router.patch("/api/v1/projects/{key}", response_model=ProjectOut)
+def patch_project(
+    key: str,
+    payload: ProjectPatch,
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ProjectOut:
+    """Rename, re-describe or re-gate a project (sections 10, 12).
+
+    Writing settings is ``project.admin`` (section 7), same as the settings
+    pages; the key is immutable and ``gate_id`` must name a real gate.
+    """
+    engine = request.app.state.engine
+    project = _project_or_404(engine, key, user)
+    _require_permission(
+        engine,
+        user,
+        int(project["id"]),
+        Permission.PROJECT_ADMIN,
+        "project.admin permission required",
+    )
+    provided = payload.model_fields_set
+    if not provided:
+        raise HTTPException(status_code=422, detail="Nothing to update")
+    if "key" in provided and payload.key is not None and payload.key != project["key"]:
+        raise HTTPException(
+            status_code=422,
+            detail="the project key is immutable; use the key in the path",
+        )
+    actor = int(user["user_id"])
+    ip = request.client.host if request.client else None
+    try:
+        if "name" in provided or "description" in provided:
+            update_project(
+                engine,
+                project_id=int(project["id"]),
+                name=(
+                    payload.name
+                    if "name" in provided and payload.name is not None
+                    else str(project["name"])
+                ),
+                description=(
+                    payload.description if "description" in provided else project["description"]
+                ),
+                actor_id=actor,
+                ip=ip,
+            )
+        if "gate_id" in provided:
+            set_gate(
+                engine,
+                project_id=int(project["id"]),
+                gate_id=payload.gate_id,
+                actor_id=actor,
+                ip=ip,
+            )
+    except (ProjectKeyError, UnknownGate) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    return _project_out(engine, int(project["id"]))
+
+
+@router.delete("/api/v1/projects/{key}", status_code=204)
+def delete_project_route(
+    key: str,
+    request: Request,
+    confirm: str | None = Query(default=None),
+    user: dict[str, Any] = Depends(get_current_user),
+) -> Response:
+    """Delete a project and everything hanging off it (section 10 danger zone).
+
+    Section 7 lists what ``project.admin`` allows - settings, exclusions,
+    tokens, gate selection, members - and deleting the project is not on it.
+    Creation is a global-admin action (``POST /api/v1/projects``), so
+    destruction stays symmetric: admins only, and only after the key is typed
+    back as ``?confirm=<key>``.
+    """
+    engine = request.app.state.engine
+    project = _project_or_404(engine, key, user)
+    if not _is_global_admin(engine, user):
+        raise HTTPException(status_code=403, detail="Only admins can delete projects")
+    if confirm != project["key"]:
+        raise HTTPException(
+            status_code=422,
+            detail=f"type the project key ({project['key']}) to confirm the deletion",
+        )
+    delete_project(
+        engine,
+        project_id=int(project["id"]),
+        actor_id=int(user["user_id"]),
+        ip=request.client.host if request.client else None,
+    )
+    return Response(status_code=204)
+
+
+# --- project tokens (sections 10, 12, 13) ----------------------------------
+
+
+class TokenOut(BaseModel):
+    """A token as a list shows it: never the value, only its visible prefix."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    name: str
+    prefix: str
+    expires_at: datetime | None = None
+    last_used_at: datetime | None = None
+    revoked_at: datetime | None = None
+    created_at: datetime
+
+
+class TokenCreatedOut(TokenOut):
+    """``POST`` answers with the value exactly once (section 13)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    token: str
+
+
+class TokenCreate(BaseModel):
+    """Body of ``POST /api/v1/projects/{key}/tokens``: name, optional expiry."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=255)
+    expires_at: datetime | None = None
+
+    @field_validator("expires_at")
+    @classmethod
+    def _expiry_in_the_future(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        resolved = value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+        if resolved <= datetime.now(timezone.utc):
+            raise ValueError("expires_at must be in the future")
+        return resolved
+
+
+def _token_out(data: Mapping[str, Any]) -> TokenOut:
+    """Map a row from ``app.tokens`` onto the response model."""
+    return TokenOut(
+        id=int(data["id"]),
+        name=str(data["name"]),
+        prefix=str(data["prefix"]),
+        expires_at=data["expires_at"],
+        last_used_at=data["last_used_at"],
+        revoked_at=data["revoked_at"],
+        created_at=data["created_at"],
+    )
+
+
+def _admin_project(engine: Any, key: str, user: dict[str, Any]) -> Mapping[str, Any]:
+    """The project when this session both sees it and administers it."""
+    project = _project_or_404(engine, key, user)
+    _require_permission(
+        engine,
+        user,
+        int(project["id"]),
+        Permission.PROJECT_ADMIN,
+        "project.admin permission required",
+    )
+    return project
+
+
+@router.get("/api/v1/projects/{key}/tokens", response_model=list[TokenOut])
+def get_tokens(
+    key: str, request: Request, user: dict[str, Any] = Depends(get_current_user)
+) -> list[TokenOut]:
+    """Every token of the project, prefixes only (section 10)."""
+    engine = request.app.state.engine
+    project = _admin_project(engine, key, user)
+    return [_token_out(data) for data in list_tokens(engine, int(project["id"]))]
+
+
+@router.post("/api/v1/projects/{key}/tokens", response_model=TokenCreatedOut, status_code=201)
+def post_token(
+    key: str,
+    payload: TokenCreate,
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> TokenCreatedOut:
+    """Create a project token; the value appears in this response only."""
+    engine = request.app.state.engine
+    project = _admin_project(engine, key, user)
+    full_token, token_id = create_token(
+        engine,
+        int(project["id"]),
+        payload.name,
+        int(user["user_id"]),
+        payload.expires_at,
+    )
+    created = next(
+        (row for row in list_tokens(engine, int(project["id"])) if row["id"] == token_id), None
+    )
+    if created is None:  # pragma: no cover - the row was just written
+        raise HTTPException(status_code=500, detail="token not found after creation")
+    out = _token_out(created)
+    return TokenCreatedOut(**out.model_dump(), token=full_token)
+
+
+@router.delete("/api/v1/projects/{key}/tokens/{token_id}", status_code=204)
+def delete_token(
+    key: str,
+    token_id: int,
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> Response:
+    """Revoke one token of this project (section 10: revoke).
+
+    A token that belongs to another project answers 404, so revoking never
+    confirms or touches anything outside the project in the path.
+    """
+    engine = request.app.state.engine
+    project = _admin_project(engine, key, user)
+    with engine.connect() as conn:
+        owned = conn.execute(
+            text("SELECT 1 FROM api_tokens WHERE id = :tid AND project_id = :pid"),
+            {"tid": token_id, "pid": int(project["id"])},
+        ).scalar()
+    if not owned:
+        raise HTTPException(status_code=404, detail="Token not found")
+    revoke_token(engine, token_id, actor_id=int(user["user_id"]))
+    return Response(status_code=204)
+
+
+# --- members (sections 7, 12) ----------------------------------------------
+
+
+class MemberOut(BaseModel):
+    """One subject of the members matrix: who, and what it holds."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    subject_type: str
+    subject_id: int
+    name: str
+    subtitle: str
+    permissions: list[str]
+
+
+class MemberIn(BaseModel):
+    """Body of ``POST .../members``: a subject and a section 7 template."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    subject_type: str
+    subject_id: int = Field(gt=0)
+    template: str
+
+    @field_validator("subject_type")
+    @classmethod
+    def _known_kind(cls, value: str) -> str:
+        return subject_kind(value)
+
+    @field_validator("template")
+    @classmethod
+    def _known_template(cls, value: str) -> str:
+        if value not in PERMISSION_TEMPLATES:
+            expected = ", ".join(sorted(PERMISSION_TEMPLATES))
+            raise ValueError(f"unknown permission template; expected one of: {expected}")
+        return value
+
+
+class GrantOut(BaseModel):
+    """What a grant replaced: the subject and the permissions it now holds."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    subject_type: str
+    subject_id: int
+    template: str
+    permissions: list[str]
+
+
+@router.get("/api/v1/projects/{key}/members", response_model=list[MemberOut])
+def get_members(
+    key: str, request: Request, user: dict[str, Any] = Depends(get_current_user)
+) -> list[MemberOut]:
+    """The stored grants of the project, one row per user or group."""
+    engine = request.app.state.engine
+    project = _project_or_404(engine, key, user)
+    return [
+        MemberOut(
+            subject_type=str(row["subject_type"]),
+            subject_id=int(row["subject_id"]),
+            name=str(row["name"]),
+            subtitle=str(row["subtitle"]),
+            permissions=[str(value) for value in row["permissions"]],
+        )
+        for row in list_members(engine, int(project["id"]))
+    ]
+
+
+@router.post("/api/v1/projects/{key}/members", response_model=GrantOut, status_code=201)
+def post_member(
+    key: str,
+    payload: MemberIn,
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> GrantOut:
+    """Grant a permission template to a user or group (section 7)."""
+    engine = request.app.state.engine
+    project = _admin_project(engine, key, user)
+    try:
+        granted = grant(
+            engine,
+            project_id=int(project["id"]),
+            subject_type=payload.subject_type,
+            subject_id=payload.subject_id,
+            template=payload.template,
+            actor_id=int(user["user_id"]),
+            ip=request.client.host if request.client else None,
+        )
+    except MemberError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    return GrantOut(**granted)
+
+
+@router.delete("/api/v1/projects/{key}/members/{subject_type}/{subject_id}", status_code=204)
+def delete_member(
+    key: str,
+    subject_type: str,
+    subject_id: int,
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> Response:
+    """Revoke every permission this subject holds on the project (section 7)."""
+    engine = request.app.state.engine
+    project = _admin_project(engine, key, user)
+    try:
+        removed = revoke(
+            engine,
+            project_id=int(project["id"]),
+            subject_type=subject_type,
+            subject_id=subject_id,
+            actor_id=int(user["user_id"]),
+            ip=request.client.host if request.client else None,
+        )
+    except MemberError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    if not removed:
+        raise HTTPException(status_code=404, detail="No grants for that subject")
+    return Response(status_code=204)
 
 
 __all__ = ["router"]

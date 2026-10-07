@@ -640,3 +640,27 @@ Format: date, task, decision, reason.
   migrations. Shared files (`main.py`, `TASKS.md`, `decisions.md`,
   `wadjet.css`) are append-only per track and merged by Track B.
   Details: `~/projects/wadjet-files/track-a-brief.md`.
+- **T4.5 - Settings is one shell, six tabs, and one gate to get in.** The
+  tabs share `settings_shell.html` so the design's sub-navigation (`.tabs`,
+  active `aria-current`) is written once; every tab sits behind
+  `project.admin` and a refusal names that permission, while the overview's
+  "Settings" link renders only for holders (`is_project_admin` context var) -
+  hidden, not just refused, per section 14. Deletion stays **global-admin
+  only** plus a typed `?confirm=<key>`: section 7 never lists delete under
+  project.admin, and creation is admin-only, so the pair is symmetric.
+  `PATCH /api/v1/projects/{key}` accepts `key` only to answer that the key is
+  immutable, and a project the caller cannot see is 404 everywhere - section
+  7's "no existence leak" applies to settings reads as much as issues.
+- **T4.5 - One save path, one cascade list.** The pages and the pre-existing
+  `PUT .../settings` now both write through `save_settings()`, so the audit
+  row (`project.settings_update` with changed keys, never values) and the
+  Pydantic validation cannot drift between the two front doors; the general
+  tab adds `project.update`, the gate picker `project.gate_update`, members
+  `permission.grant`/`permission.revoke`, tokens reuse `token.create`/
+  `token.revoke`. No FK cascades, so `delete_project()` walks the explicit
+  `PROJECT_CASCADE` (comments -> requests -> events -> issues -> analyses ->
+  grants -> tokens -> project): **any new table that references a project
+  must be added there or deletion stops short.** A gate choice of `null`
+  means section 9's built-in default - reported as null by the API and shown
+  as the checked radio by the picker - and a created token is printed once
+  in the render, never re-readable.
