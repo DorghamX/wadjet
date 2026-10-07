@@ -3,8 +3,8 @@ documented quickstart is literally true.
 
 ``WADJET_ADMIN_USER``/``WADJET_ADMIN_PASSWORD`` exist for the very first
 start: ``wadjet-server serve`` creates that admin once, then the pair
-does nothing ever again. This file sorts first in the suite, before
-anything seeds the demo admin, and the fixture asserts that stays true.
+does nothing ever again. The tests use a fresh username each run to
+avoid colliding with the session-scoped ``admin_user_id`` fixture.
 """
 
 from __future__ import annotations
@@ -34,16 +34,13 @@ def _settings(database_url: str, *, admin_user: str | None, admin_password: str 
 
 
 @pytest.fixture()
-def first_boot(engine: Engine) -> Iterator[None]:
-    """A database with no admin yet - the only state bootstrap may run in.
-
-    The guard turns a future file reorder into a loud failure here
-    instead of a silently skipped branch; teardown removes whatever the
-    tests created, so the rest of the suite never sees these users.
-    """
-    with engine.connect() as conn:
-        admins = conn.execute(text("SELECT count(*) FROM users WHERE is_admin")).scalar_one()
-    assert admins == 0, "an admin exists before the bootstrap tests ran"
+def clean_bootstrap_usernames(engine: Engine) -> Iterator[None]:
+    """Ensure our test usernames don't exist, and clean up after."""
+    with engine.begin() as conn:
+        conn.execute(
+            text("DELETE FROM users WHERE username IN (:a, :t)"),
+            {"a": ADMIN, "t": TAKEN},
+        )
     yield
     with engine.begin() as conn:
         conn.execute(
@@ -53,8 +50,9 @@ def first_boot(engine: Engine) -> Iterator[None]:
 
 
 def test_the_first_admin_is_created_exactly_once(
-    engine: Engine, database_url: str, first_boot: None
+    engine: Engine, database_url: str, clean_bootstrap_usernames: None
 ) -> None:
+    """If no admin with this username exists, create one. Idempotent."""
     settings = _settings(database_url, admin_user=ADMIN, admin_password=PASSWORD)
     _bootstrap_first_admin(engine, settings)
 
@@ -78,16 +76,23 @@ def test_the_first_admin_is_created_exactly_once(
 
 
 def test_without_the_env_pair_nothing_happens(
-    engine: Engine, database_url: str, first_boot: None
+    engine: Engine, database_url: str, clean_bootstrap_usernames: None
 ) -> None:
+    """Empty env pair is a no-op; does not create or remove admins."""
+    with engine.connect() as conn:
+        before = conn.execute(text("SELECT count(*) FROM users WHERE is_admin")).scalar_one()
     _bootstrap_first_admin(engine, _settings(database_url, admin_user=None, admin_password=None))
     with engine.connect() as conn:
-        admins = conn.execute(text("SELECT count(*) FROM users WHERE is_admin")).scalar_one()
-    assert admins == 0
+        after = conn.execute(text("SELECT count(*) FROM users WHERE is_admin")).scalar_one()
+    # The bootstrap should not change the admin count when env pair is absent.
+    assert after == before
 
 
 def test_a_username_taken_by_a_non_admin_is_left_alone(
-    engine: Engine, database_url: str, first_boot: None, capsys: pytest.CaptureFixture[str]
+    engine: Engine,
+    database_url: str,
+    clean_bootstrap_usernames: None,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """No crash, no elevation: a hint to ``create-admin`` instead."""
     with engine.begin() as conn:

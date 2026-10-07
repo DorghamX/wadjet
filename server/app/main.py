@@ -51,8 +51,6 @@ from app.web.routes import router as pages_router
 
 BASE_DIR = Path(__file__).resolve().parent
 
-SECRET_KEY = "<<<CHANGE_ME>>>"
-
 password_hasher = PasswordHasher()
 
 
@@ -86,7 +84,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # --- Session middleware (signed cookie, backed by DB) ---
     application.add_middleware(
         SessionMiddleware,
-        secret_key=SECRET_KEY,
+        secret_key=resolved.secret_key,
         same_site="lax",
         https_only=resolved.cookie_secure,
     )
