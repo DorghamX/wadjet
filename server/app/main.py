@@ -19,6 +19,7 @@ from app.api.analyses import router as analyses_router
 from app.api.gates import router as gates_router
 from app.api.issues import router as issues_api_router
 from app.api.projects import router as projects_router
+from app.api.users import router as users_api_router  # T4.7
 from app.audit import write_audit
 from app.config import Settings, load_settings
 from app.csrf import CsrfMiddleware
@@ -34,6 +35,7 @@ from app.ratelimit import rate_limiter
 from app.security import hash_password, verify_password
 from app.session import create_session
 from app.session import get_session as get_db_session
+from app.web.admin import router as admin_pages_router  # T4.7
 from app.web.gates import router as gates_pages_router  # T4.6
 from app.web.issues import router as issue_pages_router
 from app.web.projects import router as project_pages_router
@@ -102,6 +104,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # --- Project settings and the issue list (sections 10, 12) ---
     application.include_router(projects_router)
     application.include_router(issues_api_router)
+    application.include_router(users_api_router)  # T4.7
 
     # --- Server-rendered pages (phase 4) ---
     application.include_router(pages_router)
@@ -109,6 +112,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.include_router(issue_pages_router)
     application.include_router(settings_pages_router)  # T4.5
     application.include_router(gates_pages_router)  # T4.6
+    application.include_router(admin_pages_router)  # T4.7
 
     @application.post("/session", status_code=201)
     def login(

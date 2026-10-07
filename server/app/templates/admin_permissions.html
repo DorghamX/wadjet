@@ -1,0 +1,45 @@
+{% extends "admin_shell.html" %}
+{% block admin %}
+<p class="mu">Each permission is its own flag, granted to a user or to a group. This is what
+  the four templates give - read-only here; a project&#39;s own grants are edited on that
+  project&#39;s Members tab.</p>
+
+<div class="tablewrap">
+<table class="t" style="min-width:980px">
+  <tr>
+    <th scope="col">Template</th>
+    {% for column in columns %}
+    <th scope="col">{{ column.label }}<br><span class="m mu">{{ column.permission }}</span></th>
+    {% endfor %}
+  </tr>
+  {% for template in templates %}
+  <tr>
+    <td><b>{{ template.label }}</b><br><span class="mu">{{ template.hint }}</span></td>
+    {% for cell in template.cells %}
+    <td{% if not cell.yes %} class="mu"{% endif %}>{% if cell.yes %}Yes{% else %}No{% endif %}</td>
+    {% endfor %}
+  </tr>
+  {% endfor %}
+</table>
+</div>
+
+<p class="mu" style="margin-top:12px"><span class="m">gates.admin</span> and
+  <span class="m">users.admin</span> are global: only the admin role holds them, so no
+  template grants them. An admin holds every permission everywhere, on every project.</p>
+
+<h2>What each permission allows</h2>
+<div class="tablewrap">
+<table class="t">
+  <tr>
+    <th scope="col">Permission</th>
+    <th scope="col">Allows</th>
+  </tr>
+  {% for row in legend %}
+  <tr>
+    <td class="m">{{ row.permission }}</td>
+    <td>{{ row.allows }}</td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+{% endblock %}
