@@ -14,6 +14,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from typing import Any
+from xml.sax.saxutils import escape
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -44,6 +45,22 @@ from app.tokens import create_token, list_tokens, revoke_token
 from wadjet_schema import ProjectSettings
 
 router = APIRouter()
+
+#: Leading characters a spreadsheet would execute as a formula.
+_CSV_DANGEROUS = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_safe(value: Any) -> str:
+    """A CSV cell that can never be read as a formula (CSV injection).
+
+    Issue text is attacker-influenced (a dependency name, a rule id, a
+    file path). A cell starting with ``= + - @`` or a control character is
+    prefixed with an apostrophe so Excel/LibreOffice render it as text.
+    """
+    text_value = "" if value is None else str(value)
+    if text_value.startswith(_CSV_DANGEROUS):
+        return "'" + text_value
+    return text_value
 
 
 def _require_permission(
@@ -576,7 +593,7 @@ def badge_svg(
         '  <circle cx="60" cy="60" r="55" fill="#1f3955"/>'
         '  <text x="60" y="65" font-family="IBMRlex Sans,sans-serif" '
         '        font-size="14" fill="#fff" text-anchor="middle">'
-        f"{str(row['name'])} gate"
+        f"{escape(str(row['name']))} gate"
         "</text>"
         '  <text x="60" y="90" font-family="IBMRlex Sans,sans-serif" '
         '        font-size="11" fill="#fff" text-anchor="middle">'
@@ -763,18 +780,18 @@ def export_project(
         for row in rows:
             # Break the data row into multiple lines
             row_data = [
-                str(row["id"]),
-                str(row["fingerprint"]),
-                str(row["tool"]),
-                str(row["rule_id"]),
-                str(row["severity"]),
-                str(row["category"]),
-                str(row["file_path"]) if row.get("file_path") else "",
-                str(row["line_start"]) if row.get("line_start") else "",
-                str(row["line_end"]) if row.get("line_end") else "",
-                str(row["triage_status"]),
-                str(row["presence"]),
-                str(row["created_at"]),
+                _csv_safe(row["id"]),
+                _csv_safe(row["fingerprint"]),
+                _csv_safe(row["tool"]),
+                _csv_safe(row["rule_id"]),
+                _csv_safe(row["severity"]),
+                _csv_safe(row["category"]),
+                _csv_safe(row["file_path"]),
+                _csv_safe(row["line_start"]),
+                _csv_safe(row["line_end"]),
+                _csv_safe(row["triage_status"]),
+                _csv_safe(row["presence"]),
+                _csv_safe(row["created_at"]),
             ]
             w.writerow(row_data)
         return {"format": "csv", "content": output.getvalue(), "issue_count": len(rows)}

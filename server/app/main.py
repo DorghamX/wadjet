@@ -9,6 +9,7 @@ from argon2 import PasswordHasher
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.security import OAuth2PasswordRequestForm
+from pydantic import BaseModel
 from sqlalchemy import text
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.staticfiles import StaticFiles
@@ -34,7 +35,7 @@ from app.deps import get_current_user, require_project_token
 from app.logging_setup import configure_logging
 from app.ratelimit import rate_limiter
 from app.security import hash_password, verify_password
-from app.session import create_session
+from app.session import create_session, expire_sessions_for_user
 from app.session import get_session as get_db_session
 from app.web.admin import router as admin_pages_router  # T4.7
 from app.web.gates import router as gates_pages_router  # T4.6
@@ -56,6 +57,31 @@ from app.web.settings import router as settings_pages_router  # T4.5
 BASE_DIR = Path(__file__).resolve().parent
 
 password_hasher = PasswordHasher()
+
+MIN_PASSWORD_LENGTH = 8
+
+
+class MePatch(BaseModel):
+    """Body of ``PATCH /api/v1/me``: profile fields and the password change."""
+
+    display_name: str | None = None
+    current_password: str | None = None
+    new_password: str | None = None
+
+
+class MePassword(BaseModel):
+    """Body of ``POST /api/v1/me/password``."""
+
+    current_password: str
+    new_password: str
+
+
+class AdminCreate(BaseModel):
+    """Body of ``POST /admin/create-admin``: the first admin's credentials."""
+
+    username: str
+    email: str
+    password: str
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -156,7 +182,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             with engine.begin() as conn:
                 result = conn.execute(
                     text(
-                        "SELECT id, username, password_hash, is_active FROM users "
+                        "SELECT id, username, password_hash, is_active, is_admin FROM users "
                         "WHERE username = :name"
                     ),
                     {"name": form.username},
@@ -166,7 +192,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 # Record failure even for unknown users to prevent user enumeration timing
                 rate_limiter.record_failure(form.username, client_ip)
                 raise HTTPException(status_code=401, detail="Invalid credentials")
-            user_id, username, stored_hash, is_active = result
+            user_id, username, stored_hash, is_active, is_admin = result
             if not is_active:
                 rate_limiter.record_failure(form.username, client_ip)
                 raise HTTPException(status_code=401, detail="User account is disabled")
@@ -220,7 +246,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             max_age=7 * 24 * 3600,  # 7 days
         )
 
-        return {"user_id": user_id, "username": username, "is_admin": False}
+        return {"user_id": user_id, "username": username, "is_admin": bool(is_admin)}
 
     @application.post("/session/logout")
     def logout(request: Request, response: Response) -> Any:
@@ -278,10 +304,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @application.patch("/api/v1/me", response_model=dict)
     def patch_me(
-        request: Request,
-        display_name: str | None = None,
-        current_password: str | None = None,
-        new_password: str | None = None,
+        payload: MePatch,
         current: dict[str, Any] = Depends(get_current_user),
     ) -> dict[str, Any]:
         """Update the current user's profile or password (section 14)."""
@@ -301,20 +324,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         uid, username, stored_hash, display_name_old, is_admin, is_active = result
 
         changes: dict[str, Any] = {}
-        if display_name is not None:
-            changes["display_name"] = display_name
+        if payload.display_name is not None:
+            changes["display_name"] = payload.display_name
 
-        if current_password is not None or new_password is not None:
+        password_changed = False
+        if payload.current_password is not None or payload.new_password is not None:
             # Password change requires current password verification
-            if not current_password or not new_password:
+            if not payload.current_password or not payload.new_password:
                 raise HTTPException(
                     status_code=400, detail="Both current and new password are required"
                 )
-            if not verify_password(current_password, stored_hash):
+            if not verify_password(payload.current_password, stored_hash):
                 raise HTTPException(status_code=403, detail="Current password is incorrect")
-            # Argon2id hash the new password
-            new_hash = hash_password(new_password)
-            changes["password_hash"] = new_hash
+            if len(payload.new_password) < MIN_PASSWORD_LENGTH:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Passwords need at least {MIN_PASSWORD_LENGTH} characters.",
+                )
+            changes["password_hash"] = hash_password(payload.new_password)
+            password_changed = True
 
         if not changes:
             raise HTTPException(status_code=422, detail="Nothing to update")
@@ -337,6 +365,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 ),
                 {"uid": current["user_id"]},
             ).first()
+        if password_changed:
+            # Every other session dies with the old password (section 2).
+            expire_sessions_for_user(engine, int(current["user_id"]))
         uid2, username2, email2, display_name2, is_admin2, is_active2, created_at2 = row
         return {
             "id": uid2,
@@ -350,9 +381,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @application.post("/api/v1/me/password", response_model=dict)
     def post_me_password(
-        request: Request,
-        current_password: str,
-        new_password: str,
+        payload: MePassword,
         current: dict[str, Any] = Depends(get_current_user),
     ) -> dict[str, Any]:
         """Change the current user's password (section 14)."""
@@ -371,26 +400,36 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="User not found")
         uid, username, stored_hash, display_name, is_admin, is_active = result
 
-        if not verify_password(current_password, stored_hash):
+        if not verify_password(payload.current_password, stored_hash):
             raise HTTPException(status_code=403, detail="Current password is incorrect")
+        if len(payload.new_password) < MIN_PASSWORD_LENGTH:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Passwords need at least {MIN_PASSWORD_LENGTH} characters.",
+            )
 
-        new_hash = hash_password(new_password)
+        new_hash = hash_password(payload.new_password)
         with engine.begin() as conn:
             conn.execute(
                 text("UPDATE users SET password_hash = :hash WHERE id = :uid"),
                 {"hash": new_hash, "uid": current["user_id"]},
             )
+        # Every other session dies with the old password (section 2).
+        expire_sessions_for_user(engine, int(current["user_id"]))
 
         return {"detail": "Password changed successfully"}
 
     @application.post("/admin/create-admin")
     def create_admin_endpoint(
-        username: str,
-        email: str,
-        password: str,
+        payload: AdminCreate,
         current: dict[str, Any] = Depends(get_current_user),
     ) -> dict[str, Any]:
         """Create the first admin user (run once after database setup)."""
+        if len(payload.password) < MIN_PASSWORD_LENGTH:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Passwords need at least {MIN_PASSWORD_LENGTH} characters.",
+            )
         engine = application.state.engine
         # Check if any admin already exists
         with engine.begin() as conn:
@@ -399,7 +438,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=400, detail="Admin user already exists")
 
         # Create the first admin
-        hashed = hash_password(password)
+        hashed = hash_password(payload.password)
         with engine.begin() as conn:
             conn.execute(
                 text(
@@ -407,10 +446,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "created_at, updated_at) "
                     "VALUES (:username, :email, :password_hash, TRUE, TRUE, NOW(), NOW())"
                 ),
-                {"username": username, "email": email, "password_hash": hashed},
+                {"username": payload.username, "email": payload.email, "password_hash": hashed},
             )
 
-        return {"detail": f"Admin user {username} created"}
+        return {"detail": f"Admin user {payload.username} created"}
 
     # --- Health check ---
 

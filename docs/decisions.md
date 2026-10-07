@@ -849,3 +849,37 @@ Format: date, task, decision, reason.
 - **T4.7 (Track A) — Admin users, groups, and the permission matrix.** Three new endpoints were built: `GET/POST/PATCH /api/v1/users` and `/api/v1/groups` (admin session only, validated with Pydantic, 409 on taken names, 422 on empty body, `users.admin` permission enforced). The service functions live in `app/api/users.py` and are shared with the pages at `app/web/admin.py`. Three HTML templates were added: `admin_users.html`, `admin_groups.html`, `admin_permissions.html` using a shared `admin_shell.html` and the design's copy style. The matrix reads `PERMISSION_TEMPLATES` from `app/permissions.py` and lists every permission from section 7 with its "allows" text. No new database tables were needed beyond `users`, `groups` and `group_members` which already exist from T1.2. A new `users` API module and a new `admin` pages module were created; existing read‑only interfaces (`can()`, `PERMISSION_TEMPLATES`, `write_audit()`, `read_audit()`) were not touched. The `/me` route already existed at `GET /api/v1/me` (section 14), so nothing changed there.
 
 - **T4.7 (Track A) — `/admin` is a 303 to its Users tab. The brief says decide what `/admin` itself renders and log it. After comparing against the design's expectations (the top‑bar `Admin` link, the tabs row already shows Users / Groups / Permissions, no separate index page was needed), the choice was to make `/admin` a redirect to `/admin/users` with status 303. This keeps a single canonical home and avoids keeping an index page in sync with the three tab views. The decision is logged here so Track B can resolve the merge conflict if `/admin` ever needs its own page.
+
+## 2026-10-07 (review of the T6.4 merge)
+
+- **Merge review — conflict resolution and repairs.** The track-a merge
+  left `main.py` half-resolved (orphan `<<<<<<< HEAD` markers, duplicated
+  router registrations, a syntax error) and Track A's last commit
+  (`T5.5 … (cont.)`) shipped a duplicated `export_project` and a
+  `delete_member` stub whose body was unreachable: the DELETE-members
+  endpoint answered 204 without revoking anything, and every `/export`
+  call would have raised ImportError. The merge commit rebuilds `main.py`
+  as the union of both tracks (each router registered once, dev's
+  settings-backed `secret_key`, Track A's `/api/v1/me` endpoints), keeps a
+  single `export_project` with `delete_member`'s body restored, and fixes
+  the `GET /api/v1/analyses/{id}` IDOR by scoping the query to the
+  token's own project. Track A's `app/mentions.py` was deleted: nothing
+  imported it, T5.3's real implementation lives in `app/issues.py`.
+- **Password changes and deactivations now revoke sessions.**
+  `expire_sessions_for_user` existed but was called by nothing; an admin
+  password reset, a deactivation (`PATCH /api/v1/users/{id}`) and both
+  self-service password endpoints now end every live session, which is
+  what the T1.1 decision says DB-backed sessions are for. The profile and
+  admin-creation endpoints also take JSON bodies now (passwords were
+  query parameters, i.e. written into access logs), self-service
+  passwords enforce the same 8-character minimum as the admin API, and
+  `POST /session` reports the real `is_admin` flag instead of a hardcoded
+  `false`.
+- **T4.9 is unchecked again.** The JSON endpoints (`PATCH /api/v1/me`,
+  `POST /api/v1/me/password`) exist, but there is no `/me` page, no
+  template and no nav link - the checkbox claimed a page the repository
+  does not contain.
+- **Export hardening (T5.5 follow-up).** CSV cells that start with
+  `= + - @` or a control character are prefixed with an apostrophe so a
+  downloaded export cannot execute formulas in a spreadsheet, and the
+  badge SVG escapes the gate name.

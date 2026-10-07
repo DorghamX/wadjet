@@ -39,6 +39,7 @@ from app.audit import write_audit
 from app.deps import get_current_user
 from app.permissions import Permission, can
 from app.security import hash_password
+from app.session import expire_sessions_for_user
 
 router = APIRouter()
 
@@ -493,6 +494,13 @@ def update_user(
             params,
         )
         updated = user_out(conn, user_id)
+        # A password reset or a deactivation must end every live session
+        # (section 2: sessions are DB-backed so access can be cut off now).
+        needs_session_revoke = bool(
+            ("password_hash" in updates) or (is_active is False and bool(was_active))
+        )
+    if needs_session_revoke:
+        expire_sessions_for_user(engine, user_id)
     write_audit(
         engine,
         action="user.update",
