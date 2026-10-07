@@ -1017,13 +1017,15 @@ def _seed(conn: Connection) -> dict[str, int]:
             },
         )
 
+    # Requests: section 4's vocabulary (issue_requests.requested_action),
+    # one of each state so every chip renders in the demo.
     requests = (
         (
             "payments",
             "fp",
             "demo-dave",
             "demo-carol",
-            "flag_false_positive",
+            "false_positive",
             "Looks like a test fixture leaking through - could you flag it?",
             "pending",
             None,
@@ -1047,7 +1049,7 @@ def _seed(conn: Connection) -> dict[str, int]:
             "risk",
             "demo-dave",
             "demo-carol",
-            "flag_accepted_risk",
+            "accepted_risk",
             "This one looks exploitable from the build box - worth flagging?",
             "declined",
             "demo-carol",

@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 
 from app.deps import get_current_user
+from app.issue_requests import create_request, load_request, resolve_request
 from app.issues import (
     BadIssueAction,
     BadIssueFilter,
@@ -187,6 +188,42 @@ class IssueDetailOut(IssueOut):
     references: list[str] | None = None
 
 
+class RequestIn(BaseModel):
+    """``POST .../requests``: ask for an action (section 8, section 4 vocab)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    action: str
+    target_user_id: int
+    message: str
+
+
+class ResolveIn(BaseModel):
+    """``POST /api/v1/requests/{id}/resolve``: how it ends (section 8)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    resolution: str
+    note: str | None = None
+
+
+class RequestOut(BaseModel):
+    """One request as the API returns it (section 12)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    issue_id: int
+    action: str
+    message: str | None = None
+    state: str
+    requested_by: AssigneeOut
+    target: AssigneeOut | None = None
+    resolved_by: AssigneeOut | None = None
+    resolved_note: str | None = None
+    resolved_at: datetime | None = None
+
+
 def _ip(request: Request) -> str | None:
     return request.client.host if request.client else None
 
@@ -250,6 +287,55 @@ def _comment_out(row: Mapping[str, Any]) -> CommentOut:
         body_md=str(row["body_md"]),
         created_at=row["created_at"],
         edited_at=row["edited_at"],
+    )
+
+
+def _request_by_id(request: Request, request_id: int, user: dict[str, Any]) -> dict[str, Any]:
+    """The request, but only if its project may be browsed by this user.
+
+    "No such request" answers for both states - unknown id and somebody
+    else's project - the same rule the issue endpoints follow (section 7).
+    """
+    engine = request.app.state.engine
+    row = load_request(engine, request_id=request_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="No such request")
+    project = visible_project(engine, key=str(row["project_key"]), user_id=int(user["user_id"]))
+    if project is None:
+        raise HTTPException(status_code=404, detail="No such request")
+    return row
+
+
+def _request_out(row: Mapping[str, Any]) -> RequestOut:
+    target: AssigneeOut | None = None
+    if row["target_user_id"] is not None:
+        target = AssigneeOut(
+            id=int(row["target_user_id"]),
+            username=str(row["target_username"]),
+            display_name=row["target_name"],
+        )
+    resolved_by: AssigneeOut | None = None
+    if row["resolved_by"] is not None:
+        resolved_by = AssigneeOut(
+            id=int(row["resolved_by"]),
+            username=str(row["resolver_username"]),
+            display_name=row["resolver_name"],
+        )
+    return RequestOut(
+        id=int(row["id"]),
+        issue_id=int(row["issue_id"]),
+        action=str(row["requested_action"]),
+        message=row["message"],
+        state=str(row["state"]),
+        requested_by=AssigneeOut(
+            id=int(row["requested_by"]),
+            username=str(row["requester_username"]),
+            display_name=row["requester_name"],
+        ),
+        target=target,
+        resolved_by=resolved_by,
+        resolved_note=row["resolved_note"],
+        resolved_at=row["resolved_at"],
     )
 
 
@@ -347,6 +433,59 @@ def create_issue_comment(
     if not rows:  # pragma: no cover - the row was just written
         raise HTTPException(status_code=404, detail="No such comment")
     return _comment_out(rows[0])
+
+
+@router.post("/api/v1/issues/{issue_id}/requests", response_model=RequestOut, status_code=201)
+def create_issue_request(
+    request: Request,
+    issue_id: int,
+    body: RequestIn,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> RequestOut:
+    """Ask for an action (section 8): 403 without ``issue.request``, 422 for
+    a message too short, a target who cannot give it, or an action the
+    asker could take themselves - the page's panel rules, one service."""
+    engine = request.app.state.engine
+    issue = _issue_by_id(request, issue_id, user)
+    request_id = _guarded(
+        lambda: create_request(
+            engine,
+            issue=issue,
+            requested_action=body.action,
+            target_user_id=body.target_user_id,
+            message=body.message,
+            actor_id=int(user["user_id"]),
+        )
+    )
+    created = load_request(engine, request_id=int(request_id))
+    if created is None:  # pragma: no cover - the row was just written
+        raise HTTPException(status_code=404, detail="No such request")
+    return _request_out(created)
+
+
+@router.post("/api/v1/requests/{request_id}/resolve", response_model=RequestOut)
+def resolve_request_endpoint(
+    request: Request,
+    request_id: int,
+    body: ResolveIn,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> RequestOut:
+    """Approve, decline or cancel (section 8): only the target decides, only
+    the requester cancels, only while it is pending; approval of a flag
+    action applies the flag as the target, quoting the message as reason."""
+    engine = request.app.state.engine
+    row = _request_by_id(request, request_id, user)
+    updated = _guarded(
+        lambda: resolve_request(
+            engine,
+            request=row,
+            resolution=body.resolution,
+            note=body.note,
+            actor_id=int(user["user_id"]),
+            ip=_ip(request),
+        )
+    )
+    return _request_out(updated)
 
 
 __all__ = ["router"]

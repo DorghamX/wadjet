@@ -24,6 +24,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from app.fingerprint import CONTEXT_LINES
+from app.issue_requests import REQUEST_ACTIONS, action_targets
 from app.issues import (
     BadIssueAction,
     IssuePermissionDenied,
@@ -35,7 +36,6 @@ from app.issues import (
     issue_timeline,
     load_comment,
     load_issue,
-    permission_holders,
     project_members,
     render_comment,
     set_triage,
@@ -57,8 +57,8 @@ _STATUS_PHRASES = {
     "wont_fix": "won't fix",
 }
 
-#: What a request reads as in the timeline; seeded rows use the older
-#: ``flag_*`` spelling, section 4 the bare one - both must render.
+#: What a request reads as in the timeline: section 4's bare spelling;
+#: the older ``flag_*`` spelling is still rendered for old rows.
 _REQUEST_PHRASES = {
     "confirm": "confirm this",
     "false_positive": "mark this as a false positive",
@@ -88,15 +88,19 @@ _CAPABILITY_PHRASES = {
     Permission.ISSUE_ASSIGN: "assign issues",
 }
 
-#: The panel's actions minus what the user can already do themselves.
-#: First field is the *status* - the same word the triage buttons submit -
-#: so "missing" lines up against what allowed_status_actions returns.
-_REQUESTABLE = (
-    ("confirmed", "Mark confirmed", Permission.FLAG_CONFIRM),
-    ("false_positive", "Mark as false positive", Permission.FLAG_FALSE_POSITIVE),
-    ("accepted_risk", "Accept risk", Permission.FLAG_ACCEPTED_RISK),
-    ("wont_fix", "Won't fix", Permission.FLAG_WONT_FIX),
-)
+#: Which panel actions exist, in order: the four flags - only the ones the
+#: viewer is missing - plus fix_help, which is asking for a hand rather
+#: than a flag and so is offered whatever the viewer may do (section 8).
+_FLAG_ACTIONS = ("confirm", "false_positive", "accepted_risk", "wont_fix")
+
+#: The words the panel puts on section 4's vocabulary (design copy).
+_ACTION_LABELS = {
+    "confirm": "Mark confirmed",
+    "false_positive": "Mark as false positive",
+    "accepted_risk": "Accept risk",
+    "wont_fix": "Won't fix",
+    "fix_help": "Ask for fix help",
+}
 
 
 def _phrase(status: str | None) -> str:
@@ -157,15 +161,31 @@ def _activity_view(
         )
         return view
     if kind == "request":
-        chip, word = _REQUEST_CHIPS.get(str(item["state"]), ("nt", str(item["state"]).title()))
+        state = str(item["state"])
+        chip, word = _REQUEST_CHIPS.get(state, ("nt", state.title()))
         requester = _who(item["requester_name"], item["requester_username"])
         target = _who(item["target_name"], item["target_username"])
         action = str(item["requested_action"])
         phrase = _REQUEST_PHRASES.get(action, f"act on this ({action})")
+        status, _permission = REQUEST_ACTIONS.get(action, (None, Permission.ISSUE_ASSIGN))
+        target_id = item["target_user_id"]
         view.update(
-            text=f'{requester} asked {target} to {phrase}: "{item["message"]}"',
+            id=int(item["id"]),
+            text=f'{requester} asked {target} to {phrase}: "{item["message"] or ""}"',
             chip=chip,
             word=word,
+            state=state,
+            note=item.get("resolved_note"),
+            resolver=(
+                _who(item.get("resolver_name"), item.get("resolver_username"))
+                if item.get("resolved_note")
+                else None
+            ),
+            # The design's inbox buttons, here on the row itself: a request
+            # you can decide shows its decision where the ask is.
+            approve_label="Approve and flag" if status else "Approve",
+            can_decide=state == "pending" and target_id is not None and int(target_id) == user.id,
+            can_cancel=state == "pending" and int(item["requested_by"]) == user.id,
         )
         return view
     view["text"] = _event_line(item)
@@ -223,13 +243,19 @@ def _rule_label(issue: dict[str, Any]) -> str:
 
 
 def _request_panel_view(
-    engine: Any, *, project_id: int, allowed: set[str]
+    engine: Any, *, project_id: int, allowed: set[str], viewer_id: int
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """The actions this user may not take, and who may take them for them."""
-    missing = [entry for entry in _REQUESTABLE if entry[0] not in allowed]
+    missing = [action for action in _FLAG_ACTIONS if REQUEST_ACTIONS[action][0] not in allowed]
+    offered = [*missing, "fix_help"]
+    actions = [{"value": action, "label": _ACTION_LABELS[action]} for action in offered]
     targets: dict[int, dict[str, Any]] = {}
-    for _, _, permission in missing:
-        for holder in permission_holders(engine, project_id=project_id, permission=permission):
+    for action in offered:
+        _status, permission = REQUEST_ACTIONS[action]
+        holders = action_targets(
+            engine, project_id=project_id, action=action, requester_id=viewer_id
+        )
+        for holder in holders:
             entry = targets.setdefault(
                 int(holder["id"]),
                 {
@@ -241,7 +267,6 @@ def _request_panel_view(
             phrase = _CAPABILITY_PHRASES[permission]
             if phrase not in entry["caps"]:
                 entry["caps"].append(phrase)
-    actions = [{"value": value, "label": label} for value, label, _ in missing]
     for target in targets.values():
         target["capability"] = ", ".join(target["caps"])
     return actions, list(targets.values())
@@ -274,9 +299,9 @@ def _detail_context(
     members = project_members(engine, project_id=project_id) if can_assign else []
     request_actions: list[dict[str, Any]] = []
     request_targets: list[dict[str, Any]] = []
-    if can_request and any(action[0] not in allowed for action in _REQUESTABLE):
+    if can_request and any(REQUEST_ACTIONS[action][0] not in allowed for action in _FLAG_ACTIONS):
         request_actions, request_targets = _request_panel_view(
-            engine, project_id=project_id, allowed=allowed
+            engine, project_id=project_id, allowed=allowed, viewer_id=user.id
         )
 
     activity = [

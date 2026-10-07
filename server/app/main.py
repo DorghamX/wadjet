@@ -37,6 +37,7 @@ from app.session import get_session as get_db_session
 from app.web.issue_detail import router as issue_detail_router
 from app.web.issues import router as issue_pages_router
 from app.web.projects import router as project_pages_router
+from app.web.requests import router as action_requests_router
 from app.web.routes import (
     NotAuthenticated,
     login_page,
@@ -107,6 +108,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.include_router(project_pages_router)
     application.include_router(issue_pages_router)
     application.include_router(issue_detail_router)
+    application.include_router(action_requests_router)
 
     @application.post("/session", status_code=201)
     def login(

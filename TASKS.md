@@ -45,7 +45,7 @@ code, tests and one docs line exist, `make lint test` is green and the commit me
 - [ ] **T4.9 (S)** Profile and password page ``/me`` (section 14 route; no id in 17.3)
 
 ## Phase 5: Collaboration
-- [ ] **T5.1 (M)** Request-action workflow
+- [x] **T5.1 (M)** Request-action workflow
 - [ ] **T5.2 (M)** Notifications and inbox
 - [ ] **T5.3 (S)** `@mentions`
 - [ ] **T5.4 (S)** Audit log page

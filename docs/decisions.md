@@ -708,3 +708,68 @@ Format: date, task, decision, reason.
   so both new test files snapshot the mutable issue columns and the
   append-only tables' high-water marks, and put them back on the way out;
   test-created users and sessions stay, as the suite has always allowed.
+- **T5.1 - The request lifecycle is one service, two doors.**
+  `app/issue_requests.py` owns the vocabulary (section 4: `confirm`,
+  `false_positive`, `accepted_risk`, `wont_fix`, `fix_help`, `other`) and
+  the rules; the panel/timeline page and the JSON API both call it. The
+  panel's Action select submits the *action* words, never the triage
+  status words - `allowed_status_actions` still speaks statuses, so the
+  panel maps status -> action itself and only for the four flags.
+- **T5.1 - The panel offers the four missing flags plus `fix_help`,
+  never `other`.** Section 8's audience is people without the
+  permission, so the panel still appears only with `issue.request` and
+  at least one missing flag; `fix_help` rides along for anyone (asking
+  for a hand is not a flag - the seed's own request came from bob, who
+  can assign). `other` exists for the API's full vocabulary but has no
+  sensible select label, so the UI does not offer it. Targets = union of
+  the permission holders the offered actions need (`fix_help`/`other`
+  need `issue.assign`), each with a capability phrase, the requester
+  excluded - you never ask yourself, and the server refuses a target
+  who does not hold the permission anyway.
+- **T5.1 - Messages are required, 10-2000 characters** (`MESSAGE_MIN =
+  REASON_MIN`). Section 8 only says "required", but approval quotes the
+  message straight into a triage reason, and reasons have a 10-char
+  floor - one length rule keeps approve from ever failing on its own
+  prerequisite. Notes on a decision share the 2000 cap.
+- **T5.1 - Refusals that match section 8's wording.** You cannot
+  request a flag action you already hold ("set the status yourself" -
+  and the explicit permission templates of section 7 win over the
+  permission table's "default for anyone with browse": Viewer is
+  browse-only, so dave has no panel and no API create); you cannot ask
+  yourself; one pending request per (issue, action, target) - a second
+  is "already waiting for an answer". `fix_help`/`other` skip the
+  already-holds check because everyone may ask for help.
+- **T5.1 - Approve applies the flag *as the target*, reason = the
+  requester's message.** Section 8: "attributing the target and quoting
+  the request message as the reason, plus an optional note" - so the
+  note is stored as `resolved_note` and rendered beside the decision,
+  not concatenated into the reason (which the template already quotes).
+  `set_triage` re-checks the target still holds the flag, so a target
+  who lost it since being asked is refused and the request stays
+  pending. The flag is written first, the request state second: a
+  failure in between leaves a request that can be approved again rather
+  than a decision that never happened. Only the target may approve or
+  decline, only the requester may cancel, only while pending; approving
+  `fix_help`/`other` sets no status.
+- **T5.1 - No audit rows for requests.** Section 13's audit list is
+  logins, tokens, permissions, flags, settings, gates - requests are not
+  on it; the request row *is* the record (with names and timestamps),
+  and the flag it may cause is still audited as `flag.{status}`.
+- **T5.1 - The decision controls live on the timeline row**, reusing
+  the design inbox's copy ("Approve and flag", "Decline", "Note
+  (optional)", "Cancel request") - T5.2's inbox will show the same
+  buttons over the same service. Web routes: POST
+  `/projects/{key}/issues/{id}/requests` (the panel's action) and POST
+  `/requests/{id}/resolve`, both funnelling through issue_detail's
+  `_answer` - htmx swaps the detail body, no-JS gets PRG on success and
+  the banner on a 400. Unknown id and a request outside your projects
+  share one 404 ("No request #N in any project you can see"), and the
+  API's twin answers both with one "No such request".
+- **T5.1 - Notifications are deliberately T5.2.** Section 8 says a
+  request "creates a pending request and a notification", but the
+  `notifications` table is migration 0009, which is T5.2's; T5.1 is the
+  lifecycle, T5.2 the delivery (creation *and* resolution notices plus
+  the inbox). The seed now stores section 4's bare spelling - the
+  dev database's two `flag_*` rows were updated in place - while the
+  timeline renderer keeps tolerating the old spelling for databases
+  seeded before this task.

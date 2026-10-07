@@ -44,6 +44,28 @@
         {% endif %}
         {% elif item.kind == "request" %}
         {{ item.text }} <span class="c {{ item.chip }}">{{ item.word }}</span> <span class="mu m">{{ item.when }}</span>
+        {% if item.note %}
+        <p class="mu m">{{ item.resolver }}: "{{ item.note }}"</p>
+        {% endif %}
+        {% if item.can_decide %}
+        <form id="resolve-{{ item.id }}" method="post" action="/requests/{{ item.id }}/resolve">
+          <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+          <label for="note-{{ item.id }}">Note (optional)</label>
+          <input class="f" id="note-{{ item.id }}" name="note">
+          <button class="b p" type="submit" name="resolution" value="approve"
+                  hx-post="/requests/{{ item.id }}/resolve" hx-target="#issue-detail"
+                  hx-include="#resolve-{{ item.id }}">{{ item.approve_label }}</button>
+          <button class="b" type="submit" name="resolution" value="decline"
+                  hx-post="/requests/{{ item.id }}/resolve" hx-target="#issue-detail"
+                  hx-include="#resolve-{{ item.id }}">Decline</button>
+        </form>
+        {% elif item.can_cancel %}
+        <form id="resolve-{{ item.id }}" method="post" action="/requests/{{ item.id }}/resolve">
+          <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+          <button class="b" type="submit" name="resolution" value="cancel"
+                  hx-post="/requests/{{ item.id }}/resolve" hx-target="#issue-detail">Cancel request</button>
+        </form>
+        {% endif %}
         {% else %}
         {{ item.text }} <span class="mu m">{{ item.when }}</span>
         {% endif %}
@@ -109,7 +131,9 @@
     {% if show_request %}
     <div class="k" style="margin-top:14px">
       <h3>Request an action</h3>
-      <form method="post" action="/projects/{{ project.key }}/issues/{{ issue.id }}/requests">
+      <form method="post" action="/projects/{{ project.key }}/issues/{{ issue.id }}/requests"
+            hx-post="/projects/{{ project.key }}/issues/{{ issue.id }}/requests" hx-target="#issue-detail">
+        <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
         <label for="request-action">Action</label>
         <select class="f" id="request-action" name="action">
           {% for action in request_actions %}<option value="{{ action.value }}">{{ action.label }}</option>{% endfor %}

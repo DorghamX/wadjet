@@ -801,12 +801,14 @@ def issue_timeline(engine: Engine, *, issue_id: int) -> list[dict[str, Any]]:
             conn.execute(
                 text(
                     "SELECT r.id, r.requested_action, r.message, r.state, r.created_at, "
-                    "r.requested_by, r.target_user_id, "
+                    "r.requested_by, r.target_user_id, r.resolved_note, "
                     "u.display_name AS requester_name, u.username AS requester_username, "
-                    "t.display_name AS target_name, t.username AS target_username "
+                    "t.display_name AS target_name, t.username AS target_username, "
+                    "rv.display_name AS resolver_name, rv.username AS resolver_username "
                     "FROM issue_requests r "
                     "JOIN users u ON u.id = r.requested_by "
                     "LEFT JOIN users t ON t.id = r.target_user_id "
+                    "LEFT JOIN users rv ON rv.id = r.resolved_by "
                     "WHERE r.issue_id = :iid"
                 ),
                 {"iid": issue_id},
