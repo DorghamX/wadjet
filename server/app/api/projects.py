@@ -542,6 +542,110 @@ def delete_token(
     return Response(status_code=204)
 
 
+@router.get("/api/v1/projects/{key}/export", response_model=dict)
+def export_project(
+    key: str, request: Request, user: dict[str, Any] = Depends(get_current_user), format: str = "csv"
+) -> dict[str, Any]:
+    """Export project issues as CSV or SARIF (section 12).
+
+    Only the project admin may export. The CSV format lists one issue per row.
+    The SARIF format is a hand-rolled minimal subset using only stdlib json/csv,
+    no new dependencies (section 17.1).
+    """
+    engine = request.app.state.engine
+    project = _project_or_404(engine, key, user)
+    if not can(engine, int(user["user_id"]), Permission.PROJECT_ADMIN, int(project["id"])):
+        raise HTTPException(status_code=403, detail="project.admin permission required")
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT id, fingerprint, tool, rule_id, severity, category, "
+                "file_path, line_start, line_end, triage_status, presence, "
+                "created_at FROM issues WHERE project_id = :pid"
+            ),
+            {"pid": int(project["id"])},
+        ).mappings().all()
+    if format == "csv":
+        import csv
+        import io
+        output = io.StringIO()
+        w = csv.writer(output)
+        w.writerow(["id", "fingerprint", "tool", "rule_id", "severity", "category",
+                    "file_path", "line_start", "line_end", "triage_status", "presence", "created_at"])
+        for row in rows:
+            w.writerow([str(row[c]) for c in
+                        ["id", "fingerprint", "tool", "rule_id", "severity", "category",
+                         "file_path", "line_start", "line_end", "triage_status", "presence", "created_at"]])
+        return {"format": "csv", "content": output.getvalue(), "issue_count": len(rows)}
+    if format == "sarif":
+        import json
+        sarif = {
+            "version": "2.1.0",
+            "runs": [{
+                "tool": {"name": "wadjet"},
+                "results": [],
+            }],
+            "originalRevision": "2.1.0",
+        }
+        for row in rows:
+            result = {
+                "ruleId": row["rule_id"] or row["tool"],
+                "level": row["severity"] or "note",
+                "message": {"text": row["fingerprint"] or ""},
+                "locations": [],
+            }
+            if row.get("file_path"):
+                result["locations"] = [{
+                    "physicalLocation": {
+                        "artifactLocation": {"uri": row.get("file_path", "")},
+                        "region": {"startLine": row.get("line_start", 0) or 0},
+                    }
+                }]
+            sarif["runs"][0]["results"].append(result)
+        return {"format": "sarif", "content": json.dumps(sarif), "issue_count": len(rows)}
+    raise HTTPException(status_code=400, detail="Unsupported format; use csv or sarif")
+
+
+@router.get("/api/v1/badges/{project_key}/gate.svg")
+def badge_svg(
+    project_key: str, request: Request, user: dict[str, Any] = Depends(get_current_user)
+) -> Response:
+    """Badge SVG endpoint (section 14, T5.5).
+
+    The design shows a badge/embed hint on the gate detail page.
+    ``badge_enabled`` / ``badge_token`` require a schema column that is
+    frozen (``schema/``) — only Track B may migrate. This endpoint
+    returns a minimal SVG that references the project's built-in gate;
+    the token is shown once at creation and stored in the project settings.
+    """
+    engine = request.app.state.engine
+    _project_or_404(engine, project_key, user)
+    # Read-only: no new columns; just render the built-in gate badge.
+    with engine.begin() as conn:
+        row = conn.execute(
+            text(
+                "SELECT id, name, is_default, is_builtin FROM quality_gates WHERE is_default = TRUE"
+            ),
+        ).mappings().first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="No default gate found")
+    # Simple SVG: navy eye with gate name
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120">'
+        '  <circle cx="60" cy="60" r="55" fill="#1f3955"/>'
+        '  <text x="60" y="65" font-family="IBMRlex Sans,sans-serif" '
+        '        font-size="14" fill="#fff" text-anchor="middle">'
+        f'{str(row["name"])} gate'
+        '</text>'
+        '  <text x="60" y="90" font-family="IBMRlex Sans,sans-serif" '
+        '        font-size="11" fill="#fff" text-anchor="middle">'
+        'Built-in default'
+        '</text>'
+        '</svg>'
+    )
+    return Response(content=svg, media_type="image/svg+xml")
+
+
 # --- members (sections 7, 12) ----------------------------------------------
 
 
