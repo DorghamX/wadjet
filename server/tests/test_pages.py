@@ -121,7 +121,10 @@ def test_html_login_redirects_home_and_renders_the_shell(
     home = client.get("/")
     assert home.status_code == 200
     body = home.text
-    assert "Signed in as shelluser" in body
+    # T4.2: "/" is the projects list, not a hero stub.
+    assert "0 projects" in body
+    assert "No projects yet" in body
+    assert "shelluser" in body  # the signed-in name in the top bar
     # Top bar with the nav and the shell pieces from the design.
     assert 'class="topbar"' in body
     assert 'href="/projects"' in body

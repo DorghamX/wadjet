@@ -34,8 +34,8 @@ code, tests and one docs line exist, `make lint test` is green and the commit me
 
 ## Phase 4: Web UI
 - [x] **T4.0 (S)** seed-demo
-- [ ] **T4.1 (M)** Base layout, theme tokens, light/dark, brand assets, login
-- [ ] **T4.2 (M)** Projects list and overview
+- [x] **T4.1 (M)** Base layout, theme tokens, light/dark, brand assets, login
+- [x] **T4.2 (M)** Projects list and overview
 - [ ] **T4.3 (M)** Issues list with HTMX filters
 - [ ] **T4.4 (L)** Issue detail: triage, assignment, comments, timeline
 - [ ] **T4.5 (M)** Project settings pages

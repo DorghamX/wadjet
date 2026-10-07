@@ -7,7 +7,13 @@ from sqlalchemy import Engine, text
 from app.gate import evaluate_gate
 from app.permissions import Permission, can
 from app.security import verify_password
-from app.seed import DEMO_PASSWORD, DEMO_PROJECT_KEYS, DEMO_USERS, seed_demo
+from app.seed import (
+    DEMO_AUDIT_IP,
+    DEMO_PASSWORD,
+    DEMO_PROJECT_KEYS,
+    DEMO_USERS,
+    seed_demo,
+)
 from wadjet_schema import ProjectSettings
 
 DEMO_KEY_LIST = ", ".join(f"'{key}'" for key in DEMO_PROJECT_KEYS)
@@ -89,9 +95,12 @@ def test_seed_creates_the_full_demo_dataset(engine: Engine) -> None:
             f"WHERE p.key IN ({DEMO_KEY_LIST})",
             3,
         ),
+        # Scoped to the seed's own rows (they carry the documentation IP):
+        # signing in as a demo account - the page tests do - writes real
+        # audit rows from the session's address.
         "audit entries": (
             "SELECT count(*) FROM audit_log al JOIN users u ON u.id = al.actor_id "
-            "WHERE u.username LIKE 'demo-%'",
+            f"WHERE u.username LIKE 'demo-%' AND al.ip = '{DEMO_AUDIT_IP}'",
             6,
         ),
     }

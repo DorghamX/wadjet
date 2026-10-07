@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name }} - Wadjet{% endblock %}
+{% block content %}
+<div class="pagehead">
+  <h1>{{ project.name }}</h1>
+  <span class="m mu">{{ project.key }}</span>
+</div>
+{% if project.description %}<p class="mu">{{ project.description }}</p>{% endif %}
+
+{% if banner %}
+<div class="{{ banner.cls }}">
+  <b>{{ banner.title }}</b> {{ banner.reference }}
+  {% if banner.sentences %}
+  <ul>{% for sentence in banner.sentences %}<li>{{ sentence }}</li>{% endfor %}</ul>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if has_analyses %}
+<div class="g g4">
+  {% for card in cards %}
+  <div class="k"><div class="v">{{ card.value }}</div>{{ card.label }}</div>
+  {% endfor %}
+</div>
+
+<div class="g g3" style="margin-top:14px">
+  <div class="k">
+    <h3>Open issues over the last 10 analyses</h3>
+    <div class="bars" role="img" aria-label="{{ trend.label }}">
+      {% for bar in trend.bars %}<i style="height:{{ bar.height }}%"></i>{% endfor %}
+    </div>
+  </div>
+  <div class="k">
+    <h3>Scanners in this analysis</h3>
+    {% for s in scanners %}{% if not loop.first %}<br>{% endif %}{{ s.label }} <span class="c {{ s.chip }}">{{ s.status }}</span>{% if s.detail %}<br><span class="mu m">{{ s.detail }}</span>{% endif %}{% endfor %}
+  </div>
+</div>
+
+<div class="k" style="margin-top:14px">
+  <h3>Recent analyses</h3>
+  <div class="tablewrap">
+  <table class="t">
+    <tr>
+      <th scope="col">Analysis</th>
+      <th scope="col">When</th>
+      <th scope="col">Status</th>
+      <th scope="col">Quality gate</th>
+    </tr>
+    {% for a in history %}
+    <tr>
+      <td class="m">#{{ a.id }}</td>
+      <td>{{ a.when }}</td>
+      <td><span class="c {{ a.status_chip }}">{{ a.status_label }}</span></td>
+      <td><span class="c {{ a.gate_chip }}">{{ a.gate_label }}</span></td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+</div>
+{% else %}
+<div class="k">
+  <h3>No analysis yet</h3>
+  <p class="mu">Run <span class="m">wadjet scan</span> in CI with this project's token; the first upload fills this page.</p>
+</div>
+{% endif %}
+{% endblock %}

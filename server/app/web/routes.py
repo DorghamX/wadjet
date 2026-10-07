@@ -9,9 +9,11 @@ the handler registered in ``create_app``.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import text
 from starlette.templating import Jinja2Templates
@@ -138,7 +140,40 @@ def login_form(request: Request) -> Response:
     return login_page(request, next_url=next_url)
 
 
-@router.get("/")
-def home(request: Request, user: PageUser = Depends(require_page_user)) -> Response:
-    """Home: the base layout with the brand hero (the projects list lands in T4.2)."""
-    return render(request, "home.html", context={"user": user, "nav": None})
+def timeago(value: Any) -> str:
+    """Relative time in the design's copy: ``2 hours ago``, ``yesterday``.
+
+    Registered as the ``timeago`` Jinja filter in ``create_app``. Accepts a
+    ``datetime`` or an ISO string (raw columns arrive as either) and never
+    raises: a page must not break because one timestamp is malformed.
+    """
+    if value is None:
+        return "never"
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value)
+        except ValueError:
+            return str(value)
+    if not isinstance(value, datetime):
+        return str(value)
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    seconds = max(0, int((datetime.now(timezone.utc) - value).total_seconds()))
+    minutes = seconds // 60
+    if minutes < 1:
+        return "just now"
+    if minutes < 60:
+        return f"{minutes} minute{'s' if minutes > 1 else ''} ago"
+    hours = minutes // 60
+    if hours < 24:
+        return f"{hours} hour{'s' if hours > 1 else ''} ago"
+    days = hours // 24
+    if days == 1:
+        return "yesterday"
+    if days < 30:
+        return f"{days} days ago"
+    months = days // 30
+    if months < 12:
+        return f"{months} month{'s' if months > 1 else ''} ago"
+    years = days // 365
+    return f"{years} year{'s' if years > 1 else ''} ago"

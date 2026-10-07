@@ -53,6 +53,10 @@ DEMO_USERS: tuple[tuple[str, str, bool, int], ...] = (
 #: Fixed project keys - also the wipe markers if the demo is ever reset.
 DEMO_PROJECT_KEYS = ("payments", "web-portal", "data-pipeline")
 
+#: Documentation IP (RFC 5737) on every audit row the seed writes. Real
+#: sessions log in from their own address, so this marks a row as seeded.
+DEMO_AUDIT_IP = "192.0.2.10"
+
 RELEASE_GATE_CONDITIONS = (
     ("issues_blocker", ">", 0.0),
     ("secrets", ">", 0.0),
@@ -1128,7 +1132,7 @@ def _seed(conn: Connection) -> dict[str, int]:
                 "target_type": target_type,
                 "target_id": str(target_id),
                 "details": json.dumps(audit_details) if audit_details is not None else None,
-                "ip": "192.0.2.10",
+                "ip": DEMO_AUDIT_IP,
                 "created_at": _ago(days=days, hours=hours),
             },
         )

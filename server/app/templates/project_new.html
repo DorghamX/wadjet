@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}New project - Wadjet{% endblock %}
+{% block content %}
+<div class="pagehead"><h1>New project</h1></div>
+{% if error %}<div class="ban"><b>{{ error }}</b></div>{% endif %}
+<form method="post" action="/projects" class="k" style="max-width:460px">
+  <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+  <label for="key">Key</label>
+  <input class="f" id="key" name="key" required maxlength="64" pattern="[a-z0-9][a-z0-9._-]*" aria-describedby="key-hint" value="{{ form.get('key', '') if form else '' }}">
+  <p id="key-hint" class="mu" style="font-size:13px;margin:0 0 10px">The URL slug, for example <span class="m">payments-api</span>. Lowercase letters, digits, dot, dash and underscore. It cannot be changed later.</p>
+  <label for="name">Name</label>
+  <input class="f" id="name" name="name" required maxlength="255" value="{{ form.get('name', '') if form else '' }}">
+  <label for="description">Description</label>
+  <textarea class="f" id="description" name="description" rows="3">{{ form.get('description', '') if form else '' }}</textarea>
+  <button class="b p" type="submit">Create project</button> <a class="b" href="/">Cancel</a>
+</form>
+{% endblock %}

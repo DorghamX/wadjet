@@ -519,3 +519,53 @@ Format: date, task, decision, reason.
   localStorage (two inline scripts, no FOUC, no server state). The top
   bar renders all four design links now; `/inbox` and `/admin` fill in
   with T4.7/T5.2, and `/` is a brand-hero stub until T4.2's list.
+
+## 2026-10-07
+
+- **T4.2 - `/` and `/projects` render one list, and the hero is gone.**
+  Section 14 makes `/` the projects list; the brand hero now lives only on
+  the login page, and `templates/home.html` was deleted rather than left as
+  a second, rotting answer to the same question. Both addresses share
+  `_render_list`, so the nav link and the root can never drift.
+- **T4.2 - Every number on the list and the overview is the *latest
+  analysis* snapshot - except the flagged count, which is live.** The gate
+  judged `analyses.metrics`, and the design's columns (blocker/critical/
+  high, coverage) are exactly what that snapshot says; recomputing them
+  from `issues` would show today's counts next to yesterday's verdict. The
+  one live number is "Flagged false positive": triage is not part of the
+  gate metrics at all, so a snapshot could not contain it. The trend bars
+  likewise read each analysis's own `issues_total`.
+- **T4.2 - Project creation is a global-admin action, on the page too.**
+  Section 7 lists the whole permission set and `project.create` is not in
+  it, so both `POST /api/v1/projects` and the form at `/projects/new` answer
+  403 for everyone else ("Ask an admin to create the project, then add
+  yourself as a member"). The form and the endpoint call the *same*
+  `create_project()` in `app/projects.py`: one key validator, one duplicate
+  rule, one audit row, one grant template. A bad or duplicate key
+  re-renders the form with 400 and the typed values (an HTML client wants
+  its input back, not a 422 document); the JSON endpoint keeps 422/409.
+- **T4.2 - `/projects/{key}` answers 404 for "no such key" *and* for "no
+  grant", with one message.** Telling a stranger "exists, but forbidden"
+  would leak which projects a company runs; both cases render
+  `error.html`, and the key is echoed through Jinja autoescaping (the test
+  requests `/projects/<script>alert(1)` and asserts the escaped form).
+- **T4.2 - One query decides visibility: `visible_projects()` in
+  `app/projects.py`.** The page and the JSON API both need "projects this
+  session may browse", so the `LEFT JOIN LATERAL` latest-analysis query and
+  the `project.browse`-through-user-or-group predicate live in the service
+  module and are imported by both (section 12's `GET /api/v1/projects` was
+  missing entirely; it now exists and returns `analysis: null` until a
+  project's first upload).
+- **T4.2 - Relative times come from one `timeago` Jinja filter**
+  (`2 hours ago`, `yesterday`, per the design's copy): naive timestamps are
+  read as UTC, anything unparseable is passed through as-is so a malformed
+  row degrades to readable text instead of a 500, and `None` reads
+  `never`. The trend chart carries an `aria-label` with the exact
+  per-analysis counts, because height alone is not an accessible channel.
+- **T4.2 - The seed's audit rows are marked with `DEMO_AUDIT_IP`
+  (192.0.2.10, RFC 5737).** `test_seed` counted every audit row by a
+  `demo-%` actor, and T4.2's page tests sign in as `demo-dave` - each login
+  writes a real audit row from the session address, which took the count
+  from 6 to 10. Filtering on the seed's own marker keeps the assertion
+  about *seeded* data honest without forbidding tests from using the demo
+  accounts.

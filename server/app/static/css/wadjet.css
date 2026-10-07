@@ -85,3 +85,16 @@ label{display:block;font-size:13px;color:var(--mut)}
 .auth-brand h1{font-size:26px}
 .auth-brand p{margin:2px 0 0;font-size:14px}
 .auth .b.p{width:100%;padding:8px 12px;font-size:15px}
+/* Page furniture (T4.2): list head, page head, scrollable tables, banner
+   variants for the passing and incomplete gate, links inside tables. */
+.listhead{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.listhead h1{font-size:19px;margin:0;font-weight:600}
+.pagehead{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin:0 0 4px}
+.pagehead h1{font-size:26px;margin:0;letter-spacing:-.01em}
+.tablewrap{overflow-x:auto}
+.ban.ok{border-color:var(--ok);background:var(--okb)}
+.ban.ok b{color:var(--ok)}
+.ban.wn{border-color:var(--wn);background:var(--wnb)}
+.ban.wn b{color:var(--wn)}
+.t a{color:var(--ink);text-decoration:none}
+.t a:hover{color:var(--acc);text-decoration:underline}

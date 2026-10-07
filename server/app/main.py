@@ -33,11 +33,13 @@ from app.ratelimit import rate_limiter
 from app.security import hash_password, verify_password
 from app.session import create_session
 from app.session import get_session as get_db_session
+from app.web.projects import router as project_pages_router
 from app.web.routes import (
     NotAuthenticated,
     login_page,
     not_authenticated_handler,
     safe_next,
+    timeago,
 )
 from app.web.routes import router as pages_router
 
@@ -72,6 +74,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # --- Static assets and Jinja2 pages (phase 4) ---
     application.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
     application.state.templates = Jinja2Templates(directory=BASE_DIR / "templates")
+    application.state.templates.env.filters["timeago"] = timeago
     application.add_exception_handler(NotAuthenticated, not_authenticated_handler)
 
     # --- Session middleware (signed cookie, backed by DB) ---
@@ -97,6 +100,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # --- Server-rendered pages (phase 4) ---
     application.include_router(pages_router)
+    application.include_router(project_pages_router)
 
     @application.post("/session", status_code=201)
     def login(
