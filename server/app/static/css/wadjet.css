@@ -98,3 +98,10 @@ label{display:block;font-size:13px;color:var(--mut)}
 .ban.wn b{color:var(--wn)}
 .t a{color:var(--ink);text-decoration:none}
 .t a:hover{color:var(--acc);text-decoration:underline}
+/* Filter sidebar (T4.3): facets read as the design's plain list until you
+   reach for them; the active one wears the accent and says it is pressed. */
+.ls a{color:inherit;text-decoration:none}
+.ls a:hover{color:var(--acc);text-decoration:underline}
+.ls a.on{color:var(--acc);font-weight:600}
+.ls span{color:var(--mut)}
+.gr label{color:var(--mut);font-size:13px}

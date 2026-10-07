@@ -18,7 +18,7 @@ from sqlalchemy import Connection, Engine, text
 from sqlalchemy.exc import IntegrityError
 
 from app.audit import write_audit
-from app.permissions import PERMISSION_TEMPLATES
+from app.permissions import PERMISSION_TEMPLATES, Permission, can
 from wadjet_schema import ProjectSettings
 
 #: Page routes claim these keys for themselves; a project may not take one.
@@ -187,6 +187,30 @@ def visible_projects(
     return cast(Sequence[Mapping[str, Any]], rows)
 
 
+def visible_project(engine: Engine, *, key: str, user_id: int) -> Mapping[str, Any] | None:
+    """The project row when ``key`` exists *and* the caller may browse it.
+
+    Section 7 makes the two failures indistinguishable on purpose: whoever
+    cannot see a project must not learn whether it exists. Pages render one
+    404 and the JSON API answers 404 - both call this, so the rule cannot
+    drift apart between them.
+    """
+    with engine.connect() as conn:
+        row = (
+            conn.execute(
+                text("SELECT id, key, name, description, settings FROM projects WHERE key = :key"),
+                {"key": key},
+            )
+            .mappings()
+            .first()
+        )
+    if row is None:
+        return None
+    if not can(engine, user_id, Permission.PROJECT_BROWSE, int(row["id"])):
+        return None
+    return cast(Mapping[str, Any], row)
+
+
 __all__ = [
     "DuplicateProjectKey",
     "KEY_HELP",
@@ -196,5 +220,6 @@ __all__ = [
     "create_project",
     "stored_settings",
     "validate_key",
+    "visible_project",
     "visible_projects",
 ]

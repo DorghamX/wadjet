@@ -1,0 +1,48 @@
+{# Children of #issues-body: filter state, the facet sidebar, the toolbar and
+   the table. Clicking a facet replaces this whole region (htmx), so the
+   hidden fields and the active states are re-rendered together; typing in the
+   search box only replaces #issues-table, which is what keeps the caret put. #}
+{% if filters.status %}<input type="hidden" name="status" value="{{ filters.status }}">{% endif %}
+{% if filters.severity %}<input type="hidden" name="severity" value="{{ filters.severity }}">{% endif %}
+{% if filters.category %}<input type="hidden" name="category" value="{{ filters.category }}">{% endif %}
+{% if filters.tool %}<input type="hidden" name="tool" value="{{ filters.tool }}">{% endif %}
+{% if filters.file %}<input type="hidden" name="file" value="{{ filters.file }}">{% endif %}
+{% if filters.presence %}<input type="hidden" name="presence" value="{{ filters.presence }}">{% endif %}
+{% if filters.assignee %}<input type="hidden" name="assignee" value="{{ filters.assignee }}">{% endif %}
+<div class="g g2">
+  <div hx-target="#issues-body" hx-push-url="true">
+    {# Facet links carry their own URL plus whatever is in the search box and
+       sort menu right now - but never the mirrors below, which would re-state
+       the very filter the link is about to change. The clear link stays out
+       of that include: clearing means dropping the text you just typed. #}
+    <div hx-include="#issue-search-text, #issue-search-sort">
+      {% for group in facets %}
+      <h3>{{ group.heading }}</h3>
+      <ul class="ls">
+        {% for f in group.rows %}
+        <li><a href="{{ f.url }}" hx-get="{{ f.url }}"{% if f.active %} class="on" aria-current="true"{% endif %}>{{ f.word }}</a><span>{{ f.count }}</span></li>
+        {% endfor %}
+      </ul>
+      {% endfor %}
+    </div>
+    {% if filtered %}<p class="m mu"><a href="{{ clear_url }}" hx-get="{{ clear_url }}">Clear filters</a></p>{% endif %}
+  </div>
+  <div>
+    <div class="gr">
+      <input class="f" type="search" id="issue-search-text" name="text" value="{{ filters.text or '' }}"
+             placeholder="Search by title, file or rule" aria-label="Search issues"
+             hx-get="/projects/{{ project.key }}/issues" hx-target="#issues-table"
+             hx-include="#issue-search" hx-push-url="true"
+             hx-trigger="keyup changed delay:300ms, search">
+      <label class="mu" for="issue-search-sort">Sort</label>
+      <select class="f" id="issue-search-sort" name="sort"
+              hx-get="/projects/{{ project.key }}/issues" hx-target="#issues-table"
+              hx-include="#issue-search" hx-push-url="true" hx-trigger="change">
+        {% for value, label in sorts %}<option value="{{ value }}"{% if filters.sort == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </div>
+    <div id="issues-table">
+{% include "issues_table.html" %}
+    </div>
+  </div>
+</div>

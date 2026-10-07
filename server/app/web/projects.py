@@ -19,13 +19,13 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import Engine, text
 
-from app.permissions import Permission, can
 from app.projects import (
     DuplicateProjectKey,
     ProjectKeyError,
     create_project,
     stored_settings,
     validate_key,
+    visible_project,
     visible_projects,
 )
 from app.web.routes import PageUser, render, require_page_user, timeago
@@ -382,17 +382,9 @@ def project_overview(
 ) -> Response:
     """``/projects/{key}``: gate banner, cards, trend, scanners, history."""
     engine = request.app.state.engine
-    with engine.connect() as conn:
-        project = (
-            conn.execute(
-                text("SELECT id, key, name, description, settings FROM projects WHERE key = :key"),
-                {"key": key},
-            )
-            .mappings()
-            .first()
-        )
     # Unknown key and "not granted" answer the same way: no existence leak.
-    if project is None or not can(engine, user.id, Permission.PROJECT_BROWSE, int(project["id"])):
+    project = visible_project(engine, key=key, user_id=user.id)
+    if project is None:
         return render(
             request,
             "error.html",

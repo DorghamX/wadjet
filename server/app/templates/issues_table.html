@@ -1,0 +1,45 @@
+{# Children of #issues-table: the table itself and its pager, or the empty
+   state. This is what typing in the search box swaps - note it never contains
+   the input, so focus and the caret survive every keystroke.               #}
+{% if issues %}
+<div class="tablewrap">
+<table class="t">
+  <tr>
+    <th scope="col">Severity</th>
+    <th scope="col">Issue</th>
+    <th scope="col">Location</th>
+    <th scope="col">Status</th>
+    <th scope="col">Assignee</th>
+  </tr>
+  {% for i in issues %}
+  <tr>
+    <td><span class="{{ i.severity_class }}">{{ i.severity_word }}</span></td>
+    <td>{{ i.title }}<br><span class="mu">{{ i.rule }}</span></td>
+    <td class="m">{% if i.location %}{{ i.location }}{% else %}<span class="mu">-</span>{% endif %}</td>
+    <td><span class="c {{ i.chip }}">{{ i.status_word }}</span>{% if i.resolved %} <span class="c nt">Resolved</span>{% endif %}</td>
+    <td>{{ i.assignee or "Unassigned" }}</td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+<nav class="gr" aria-label="Issue pages" hx-target="#issues-table" hx-push-url="true">
+  {% if prev_url %}<a class="b" href="{{ prev_url }}" hx-get="{{ prev_url }}">Previous</a>{% endif %}
+  <span class="mu">Page {{ filters.page }} of {{ page_count }} &middot; {{ total }} issue{{ "" if total == 1 else "s" }}</span>
+  {% if next_url %}<a class="b" href="{{ next_url }}" hx-get="{{ next_url }}">Next</a>{% endif %}
+</nav>
+{% else %}
+<div class="k" hx-target="#issues-body" hx-push-url="true">
+  {% if filters.page > page_count and total > 0 %}
+  <h3>That page is past the end</h3>
+  <p class="mu">This project has {{ total }} issue{{ "" if total == 1 else "s" }} on {{ page_count }} page{{ "" if page_count == 1 else "s" }}.</p>
+  <a class="b" href="{{ first_page_url }}" hx-get="{{ first_page_url }}">Back to page 1</a>
+  {% elif filtered %}
+  <h3>No issues match</h3>
+  <p class="mu">Nothing in this project matches the current filters. Clear them to see the whole list.</p>
+  <a class="b" href="{{ clear_url }}" hx-get="{{ clear_url }}">Clear filters</a>
+  {% else %}
+  <h3>No issues yet</h3>
+  <p class="mu">Run <span class="m">wadjet scan</span> in CI with this project's token; findings land here.</p>
+  {% endif %}
+</div>
+{% endif %}

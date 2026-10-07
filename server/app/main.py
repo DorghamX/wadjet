@@ -17,6 +17,7 @@ from starlette.templating import Jinja2Templates
 from app.api.agent import router as agent_router
 from app.api.analyses import router as analyses_router
 from app.api.gates import router as gates_router
+from app.api.issues import router as issues_api_router
 from app.api.projects import router as projects_router
 from app.audit import write_audit
 from app.config import Settings, load_settings
@@ -33,6 +34,7 @@ from app.ratelimit import rate_limiter
 from app.security import hash_password, verify_password
 from app.session import create_session
 from app.session import get_session as get_db_session
+from app.web.issues import router as issue_pages_router
 from app.web.projects import router as project_pages_router
 from app.web.routes import (
     NotAuthenticated,
@@ -95,12 +97,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.include_router(analyses_router)
     application.include_router(gates_router)
 
-    # --- Project settings (section 10) ---
+    # --- Project settings and the issue list (sections 10, 12) ---
     application.include_router(projects_router)
+    application.include_router(issues_api_router)
 
     # --- Server-rendered pages (phase 4) ---
     application.include_router(pages_router)
     application.include_router(project_pages_router)
+    application.include_router(issue_pages_router)
 
     @application.post("/session", status_code=201)
     def login(

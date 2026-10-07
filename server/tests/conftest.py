@@ -40,9 +40,16 @@ def engine(database_url: str) -> Engine:
 
 
 @pytest.fixture()
-def app(settings: Settings) -> FastAPI:
-    """A Wadjet application pointed at the test database."""
-    return create_app(settings)
+def app(settings: Settings) -> Iterator[FastAPI]:
+    """A Wadjet application pointed at the test database.
+
+    Every application owns its own engine (section 15.3.2), so the fixture
+    disposes it on the way out: a suite that leaks one pool per test would
+    run PostgreSQL out of connections before it ran out of assertions.
+    """
+    application = create_app(settings)
+    yield application
+    application.state.engine.dispose()
 
 
 @pytest.fixture()
@@ -253,8 +260,9 @@ def group_member_user_id(engine: Engine, group_id: int, project_id: int) -> int:
 @pytest.fixture()
 def live_server(settings: Settings) -> Iterator[str]:
     """A real uvicorn server on a local port, for CLI health checks."""
+    application = create_app(settings)
     config = uvicorn.Config(
-        create_app(settings),
+        application,
         host="127.0.0.1",
         port=8123,
         log_level="error",
@@ -271,3 +279,4 @@ def live_server(settings: Settings) -> Iterator[str]:
     yield "http://127.0.0.1:8123"
     server.should_exit = True
     thread.join(timeout=10)
+    application.state.engine.dispose()

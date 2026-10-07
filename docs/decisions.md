@@ -569,3 +569,55 @@ Format: date, task, decision, reason.
   from 6 to 10. Filtering on the seed's own marker keeps the assertion
   about *seeded* data honest without forbidding tests from using the demo
   accounts.
+- **T4.3 - One issues route answers three ways, chosen by the `HX-Target`
+  header htmx already sends** (section 14 + 12): no header = the whole page,
+  `issues-body` = sidebar + mirrors + table (a facet click or a filter clear),
+  `issues-table` = table + pager only (typing in the search box, which is what
+  keeps the caret in the field - the input lives outside that fragment). One
+  URL, so the address bar only ever shows the canonical `?status=...&text=...`
+  filter URL, and a no-JS browser gets the same filters via a plain GET form.
+- **T4.3 - Facet links carry every filter but never `text` or `sort`.** Those
+  two travel with the form (`hx-include` points at the search box and the sort
+  menu only), so a link rendered before you finished typing cannot drag a
+  stale search back behind your back - and so each parameter arrives exactly
+  once, no matter which of the two sources states it. The one degradation is
+  deliberate and documented: without JavaScript a facet click drops the typed
+  search. `IssueFilters.params()` is the single URL builder for facets,
+  pager, "Clear filters" and "page 1", so no link can forget a filter; it
+  omits defaults (page 1, default sort) to keep URLs short, and the parser
+  reads the *first* occurrence of a repeated key, which is always the URL's
+  own value.
+- **T4.3 - "Clear filters" sits outside the facet `hx-include` on purpose.**
+  It must be able to drop the text in the search box; if the form were
+  included, the just-cleared search would be re-sent with the link.
+- **T4.3 - Facet counts ignore the active filters.** A count labels the set
+  you would get by clicking that link, so a number that shrank while you
+  filtered would be a lie about it. A value with no issues is hidden unless
+  it is the active filter, which still has to say so (word + `aria-current`).
+- **T4.3 - `GET /api/v1/projects/{key}/issues` (section 12 gap) parses and
+  sorts with the same `app.issues` code as the page**, so an API call and a
+  dashboard link with the same parameters always agree: unknown enum values
+  answer 422 naming what was expected (never silently "all issues"),
+  `per_page` is capped at 200 rather than refused, and a page past the end is
+  an empty list with a truthful `total`. Visibility goes through
+  `visible_project()`, T4.2's rule widened to one project: unknown key and
+  "no grant" are the same 404 for the page and the API.
+- **T4.3 - An empty *page* is not an empty *project*.** `page=99` says "That
+  page is past the end" with a link back; only a project with zero issues
+  gets the "No issues yet / run `wadjet scan`" copy. A page that answered
+  "nothing here" to a stale bookmark would be telling the user their project
+  was clean.
+- **T4.3 - htmx 2.0.5 is vendored under `static/js/` and loaded once, with
+  `defer`, from `base.html`** (2.1.0 does not exist on unpkg). The issues
+  title is plain text until T4.4 adds `/projects/{key}/issues/{id}`: the
+  design shows no link there, and a link to a page that does not exist yet
+  would be a dead end. The sort menu is the one addition to the design's
+  toolbar - section 12 requires `sort`, and a list you cannot re-order hides
+  its worst rows below the fold.
+- **T4.3 - Test fixtures now dispose their engines.** `create_app` builds one
+  pooled engine per application (5 + 10 connections), and `conftest` kept
+  every one of them alive for the life of the session; T4.3's 17 tests pushed
+  the suite past PostgreSQL's `max_connections = 100` and six unrelated tests
+  failed with "too many clients already". The `app` and `live_server`
+  fixtures now dispose on teardown - the leak was pre-existing, the new file
+  just found its edge.
