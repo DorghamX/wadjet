@@ -52,7 +52,7 @@ code, tests and one docs line exist, `make lint test` is green and the commit me
 - [x] **T5.5 (M)** CSV and SARIF export, quality gate badge
 
 ## Phase 6: Release
-- [ ] **T6.1 (M)** Docs: README quickstart, operations, writing-an-adapter, supported tools
-- [ ] **T6.2 (S)** `scanner-compat.yml` weekly workflow
-- [ ] **T6.3 (S)** Image build and push workflow
+- [x] **T6.1 (M)** Docs: README quickstart, operations, writing-an-adapter, supported tools
+- [x] **T6.2 (S)** `scanner-compat.yml` weekly workflow
+- [x] **T6.3 (S)** Image build and push workflow
 - [ ] **T6.4 (S)** Walk through section 18

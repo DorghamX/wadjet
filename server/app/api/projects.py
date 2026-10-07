@@ -748,6 +748,93 @@ def delete_member(
     user: dict[str, Any] = Depends(get_current_user),
 ) -> Response:
     """Revoke every permission this subject holds on the project (section 7)."""
+
+@router.get("/api/v1/projects/{key}/export", response_model=dict)
+def export_project(
+    key: str,
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+    format: str = "csv",
+) -> dict[str, Any]:
+    """Export project issues as CSV or SARIF (section 12).
+
+    Only the project admin may export. The CSV format lists one issue per row.
+    The SARIF format is a hand-rolled minimal subset using only stdlib json/csv,
+    no new dependencies (section 17.1).
+    """
+    engine = request.app.state.engine
+    from fastapi import HTTPException
+    from app.projects import _project_or_404
+    project = _project_or_404(engine, key, user)
+    if not can(engine, int(user["user_id"]), Permission.PROJECT_ADMIN, int(project["id"])):
+        raise HTTPException(status_code=403, detail="project.admin permission required")
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT id, fingerprint, tool, rule_id, severity, category, "
+                "file_path, line_start, line_end, triage_status, presence, "
+                "created_at FROM issues WHERE project_id = :pid"
+            ),
+            {"pid": int(project["id"])},
+        ).mappings().all()
+    if format == "csv":
+        import io, csv
+        output = io.StringIO()
+        w = csv.writer(output)
+        # Break the header row into multiple lines to stay under 100 chars
+        hdr = [
+            "id", "fingerprint", "tool", "rule_id", "severity", "category",
+            "file_path", "line_start", "line_end", "triage_status", "presence", "created_at"
+        ]
+        w.writerow(hdr)
+        for row in rows:
+            # Break the data row into multiple lines
+            row_data = [
+                str(row["id"]),
+                str(row["fingerprint"]),
+                str(row["tool"]),
+                str(row["rule_id"]),
+                str(row["severity"]),
+                str(row["category"]),
+                str(row["file_path"]) if row.get("file_path") else "",
+                str(row["line_start"]) if row.get("line_start") else "",
+                str(row["line_end"]) if row.get("line_end") else "",
+                str(row["triage_status"]),
+                str(row["presence"]),
+                str(row["created_at"]),
+            ]
+            w.writerow(row_data)
+        return {"format": "csv", "content": output.getvalue(), "issue_count": len(rows)}
+    elif format == "sarif":
+        import json
+        sarif = {
+            "version": "2.1.0",
+            "runs": [{
+                "tool": {"name": "wadjet"},
+                "results": [],
+            }],
+            "originalRevision": "2.1.0",
+        }
+        for row in rows:
+            result = {
+                "ruleId": row["rule_id"] or row["tool"],
+                "level": row["severity"] or "note",
+                "message": {"text": row["fingerprint"] or ""},
+                "locations": [],
+            }
+            if row.get("file_path"):
+                result["locations"] = [{
+                    "physicalLocation": {
+                        "artifactLocation": {"uri": row["file_path"]},
+                        "region": {"startLine": row["line_start"] or 0},
+                    }
+                }]
+            sarif["runs"][0]["results"].append(result)
+        return {"format": "sarif", "content": json.dumps(sarif), "issue_count": len(rows)}
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported format; use csv or sarif")
+
+
     engine = request.app.state.engine
     project = _admin_project(engine, key, user)
     try:
