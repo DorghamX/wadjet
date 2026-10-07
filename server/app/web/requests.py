@@ -11,7 +11,7 @@ carry their own ``resolution`` and post to the second.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from app.issue_requests import create_request, load_request, resolve_request
 from app.issues import BadIssueAction, IssuePermissionDenied
@@ -95,6 +95,18 @@ async def resolve_action(
         )
     except (IssuePermissionDenied, BadIssueAction) as exc:
         error = str(exc)
+    next_url = str(form.get("next") or "")
+    if (
+        error is None
+        and not request.headers.get("HX-Request")
+        and next_url.startswith("/")
+        and not next_url.startswith("//")
+    ):
+        # Posted from a page that is not this issue's - the inbox sends
+        # its decisions here with next=/inbox. Same-origin only, so the
+        # redirect cannot leave the site; the detail page, which posts
+        # without next, keeps landing on the issue itself.
+        return RedirectResponse(next_url, status_code=303)
     # The request always belongs to one issue: back to that issue's page.
     return _answer(request, user, project, int(row["issue_id"]), error=error)
 

@@ -52,7 +52,13 @@ def restored(engine: Engine) -> Iterator[None]:
         ).all()
         marks = {
             table: int(conn.execute(text(f"SELECT COALESCE(MAX(id), 0) FROM {table}")).scalar_one())
-            for table in ("issue_events", "issue_comments", "issue_requests", "audit_log")
+            for table in (
+                "issue_events",
+                "issue_comments",
+                "issue_requests",
+                "audit_log",
+                "notifications",
+            )
         }
     yield
     with engine.begin() as conn:

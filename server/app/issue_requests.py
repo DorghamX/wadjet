@@ -33,6 +33,7 @@ from app.issues import (
     permission_holders,
     set_triage,
 )
+from app.notifications import create_notification
 from app.permissions import Permission, can
 
 #: Section 4's vocabulary: ``requested_action`` -> (the triage status an
@@ -154,6 +155,14 @@ def create_request(
                 "message": cleaned,
             },
         ).scalar_one()
+        # Section 8: the ask and the target's note about it are one write -
+        # a request that exists without its notification must not.
+        create_notification(
+            conn,
+            user_id=int(target_user_id),
+            kind="request",
+            ref={"request": int(new_id), "issue": int(issue["id"])},
+        )
     return int(new_id)
 
 
@@ -257,6 +266,19 @@ def resolve_request(
         ).scalar_one_or_none()
         if updated is None:  # pragma: no cover - decided between load and here
             raise BadIssueAction("This request is no longer waiting for an answer.")
+        # Section 8: "both sides get notifications" - over the whole
+        # lifecycle each side is told once: the target was told of the
+        # ask, and the requester is told the outcome here. A
+        # cancellation adds no second copy - the target's own pointer
+        # reads "cancelled ..." from the live state already, and a new
+        # unread row would only repeat what that one says.
+        if resolution != "cancel":
+            create_notification(
+                conn,
+                user_id=int(request["requested_by"]),
+                kind="request",
+                ref={"request": int(request["id"]), "issue": int(request["issue_id"])},
+            )
     decided = load_request(engine, request_id=int(request["id"]))
     if decided is None:  # pragma: no cover - the row was just written
         raise RequestNotFound("No such request.")

@@ -773,3 +773,50 @@ Format: date, task, decision, reason.
   dev database's two `flag_*` rows were updated in place - while the
   timeline renderer keeps tolerating the old spelling for databases
   seeded before this task.
+- **T5.2 - Notifications are pointers, never copies** (migration 0009):
+  `notifications` stores user, `type` (`request`; `mention` arrives with
+  T5.3), `read_at`, and a JSONB `ref` holding the issue and request ids.
+  The inbox builds each sentence from the live rows at render time, so a
+  pointer written while a request was pending reads correctly once it is
+  approved, declined or cancelled - the same no-stale-copies rule the
+  issue timeline follows. A dangling ref (request gone, project hidden)
+  is skipped rather than rendered.
+- **T5.2 - Who is told:** creating a request notifies its target (same
+  transaction - a request without its notification cannot exist);
+  approving or declining notifies the requester; cancelling notifies
+  nobody new, because the target's own pointer already reads
+  "cancelled ..." from the live state - a second unread row would only
+  repeat what that one says. Over the whole lifecycle each side is told
+  once, satisfying section 8's "both sides get notifications" without
+  duplicates. The seed ships three demo pointers, two unread; the dev
+  database got them by direct insert, since `seed_demo` will not re-seed
+  a database it already filled.
+- **T5.2 - The inbox page is the design's two panels plus a third.**
+  `Waiting for you (N)` renders the design's sentence and message quote
+  verbatim and posts its Approve/Decline to T5.1's resolve route with
+  `next=/inbox`; `Requests you sent` is the noun-on-issue chip list;
+  `Notifications (N-unread)` is section 14's third inbox item - the
+  design mock shows only two panels, but /inbox must carry notifications
+  too, so it is the third child of the design's `g g3` grid (landing
+  under the waiting panel). Counts appear only when non-zero; Mark all
+  as read stamps every unread row of the current user in one POST/PRG.
+- **T5.2 - Inbox decisions are plain form posts, not htmx.** The
+  resolve route answers issue_detail's region; teaching it a second
+  partial for the inbox would fork the funnel for no gain (the bulk-
+  triage precedent: not every control needs a swap). The `next` field is
+  only honoured on success, only without an htmx header, and only for
+  same-origin paths (`/`-prefixed, not `//`), so it cannot leave the
+  site; an error still lands on the issue page's banner, where the
+  context is explained.
+- **T5.2 - The API's inbox pair**: `GET /api/v1/notifications` returns
+  `{unread, items}` (newest first, ref parsed back to an object) and
+  `POST .../read` takes optional `ids` - omitted means every unread one
+  of mine, and ids belonging to somebody else change nothing (the same
+  rule as the page's Mark-all button: you cannot read for another user).
+  A session with no cookies skips CSRF and still gets 401.
+- **T5.2 - Test hygiene for a shared schema**: the inbox suite's
+  restore fixture now also snapshots `notifications.read_at` and the
+  seeded requests' state columns (Mark-all and inbox decisions stamp
+  demo rows), and `_seeded_pending` scopes its lookup to the payments
+  project - the schema tests leave a defaults-only pending
+  `false_positive` request in the shared database.

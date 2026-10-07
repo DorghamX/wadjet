@@ -1057,6 +1057,7 @@ def _seed(conn: Connection) -> dict[str, int]:
             4,
         ),
     )
+    request_ids: list[int] = []
     for key, alias, by, target, action, message, state, resolver, note, days in requests:
         request_row: dict[str, Any] = {
             "issue_id": issue_ids[(key, alias)],
@@ -1074,7 +1075,46 @@ def _seed(conn: Connection) -> dict[str, int]:
                 resolved_at=_ago(days=max(days - 1, 0), hours=1),
                 updated_at=_ago(days=max(days - 1, 0), hours=1),
             )
-        _insert(conn, "issue_requests", request_row)
+        request_ids.append(_insert(conn, "issue_requests", request_row))
+
+    # Notifications: pointers at those requests (section 4), so the inbox
+    # builds each sentence from the live row - one ask still waiting on
+    # carol, two outcomes, one read and one not.
+    notifications = (
+        (
+            users["demo-carol"],
+            request_ids[0],
+            issue_ids[("payments", "fp")],
+            _ago(days=2, hours=3),
+            None,
+        ),
+        (
+            users["demo-bob"],
+            request_ids[1],
+            issue_ids[("payments", "b006")],
+            _ago(days=4),
+            _ago(days=3),
+        ),
+        (
+            users["demo-dave"],
+            request_ids[2],
+            issue_ids[("payments", "risk")],
+            _ago(days=3, hours=1),
+            None,
+        ),
+    )
+    for user_id, request_id, issue_id, created, read in notifications:
+        _insert(
+            conn,
+            "notifications",
+            {
+                "user_id": user_id,
+                "type": "request",
+                "ref": json.dumps({"request": request_id, "issue": issue_id}),
+                "created_at": created,
+                "read_at": read,
+            },
+        )
 
     # --- tokens and audit ---------------------------------------------------
     token_ids: dict[str, int] = {}

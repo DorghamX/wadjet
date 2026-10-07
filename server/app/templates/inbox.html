@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Inbox - Wadjet{% endblock %}
+{% block content %}
+<div class="listhead">
+  <h1>Inbox</h1>
+</div>
+<p class="mu">Requests waiting for you, with the sender's message in front of the decision.</p>
+<div class="g g3">
+  <div class="k">
+    <h3>Waiting for you{% if waiting %} ({{ waiting|length }}){% endif %}</h3>
+    {% if waiting %}
+    {% for w in waiting %}
+    <p><b>{{ w.subject }}</b> {{ w.predicate }} <a href="{{ w.url }}">{{ w.title }}</a>{{ w.outro }}</p>
+    <p class="mu">"{{ w.message }}"</p>
+    <form method="post" action="/requests/{{ w.id }}/resolve">
+      <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+      <input type="hidden" name="next" value="/inbox">
+      <label for="note-{{ w.id }}">Note (optional)</label>
+      <input class="f" id="note-{{ w.id }}" name="note">
+      <button class="b p" type="submit" name="resolution" value="approve">{{ w.approve_label }}</button>
+      <button class="b" type="submit" name="resolution" value="decline">Decline</button>
+    </form>
+    {% endfor %}
+    {% else %}
+    <p class="mu">Nothing waiting for a decision from you.</p>
+    {% endif %}
+  </div>
+  <div class="k">
+    <h3>Requests you sent</h3>
+    {% if sent %}
+    {% for s in sent %}
+    <p>{{ s.noun }} on {{ s.identifier }} in {{ s.key }} <span class="c {{ s.chip }}">{{ s.word }}</span></p>
+    {% endfor %}
+    {% else %}
+    <p class="mu">You have not asked for anything yet.</p>
+    {% endif %}
+  </div>
+  <div class="k">
+    <h3>Notifications{% if unread %} ({{ unread }}){% endif %}</h3>
+    {% if notifications %}
+    {% for n in notifications %}
+    <p{% if n.read %} class="mu"{% endif %}><b>{{ n.subject }}</b> {{ n.predicate }} <a href="{{ n.url }}">{{ n.title }}</a>{{ n.outro }}{% if not n.read %} <span class="c wn">Unread</span>{% endif %}</p>
+    {% endfor %}
+    {% if unread %}
+    <form method="post" action="/inbox/read">
+      <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+      <button class="b p" type="submit">Mark all as read</button>
+    </form>
+    {% endif %}
+    {% else %}
+    <p class="mu">Nothing new.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
