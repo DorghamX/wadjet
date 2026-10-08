@@ -42,7 +42,7 @@ code, tests and one docs line exist, `make lint test` is green and the commit me
 - [x] **T4.6 (M)** Gates pages
 - [x] **T4.7 (M)** Admin users, groups, permission matrix page
 - [x] **T4.8 (S)** Analyses history
-- [ ] **T4.9 (S)** Profile and password page ``/me`` (section 14 route; no id in 17.3) — JSON endpoints exist, the page itself is still missing
+- [x] **T4.9 (S)** Profile and password page ``/me`` (section 14 route; no id in 17.3) — JSON endpoints exist, the page itself is still missing
 
 ## Phase 5: Collaboration
 - [x] **T5.1 (M)** Request-action workflow

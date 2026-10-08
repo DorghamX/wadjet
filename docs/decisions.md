@@ -883,3 +883,28 @@ Format: date, task, decision, reason.
   `= + - @` or a control character are prefixed with an apostrophe so a
   downloaded export cannot execute formulas in a spreadsheet, and the
   badge SVG escapes the gate name.
+
+## 2026-10-08 (T4.9 — the /me page)
+
+- **The `/me` path now belongs to the page; the JSON profile endpoint moved
+  to `GET /api/v1/me`.** Section 14 puts the profile/password page at
+  `/me`, but an extra from T1.1 served the JSON profile from the same
+  path, and whichever route registered first shadowed the other. The JSON
+  handler (session or bearer, same response shape) now lives at
+  `GET /api/v1/me`, next to the existing `PATCH /api/v1/me` and
+  `POST /api/v1/me/password` extras; the tests in `test_auth.py` follow
+  it. The page itself (`app/web/me.py`, `templates/me.html`) serves the
+  two forms from the design: display name and password change, with the
+  8-character minimum, and a password change revokes every session on the
+  account.
+- **`test_me_pages.py` gets a private schema and resets seed state.** The
+  module mutates seed users (demo-admin's password and display name),
+  which leaked into every module after it (logins failing with 401 for
+  the next tests because `seed_demo` is idempotent and keeps the
+  mutation). It now shadows `database_url`/`engine`/`settings` with the
+  `isolated_*` fixtures like the admin and settings page modules, and a
+  `_reset_seed` helper restores demo-admin's seed credentials before each
+  test instead of relying on `seed_demo`'s no-op when already seeded.
+- **Reaching the page.** The design's top bar is Projects, Gates, Inbox,
+  Admin - no profile item - so the signed-in user's name in the header
+  links to `/me` instead of being plain text.

@@ -75,33 +75,33 @@ def test_login_rate_limit_locks_out(app: FastAPI, engine: Engine) -> None:
 
 
 def test_me_requires_authentication(app: FastAPI) -> None:
-    """/me without a session is 401."""
+    """/api/v1/me without a session is 401."""
     with TestClient(app) as client:
-        assert client.get("/me").status_code == 401
+        assert client.get("/api/v1/me").status_code == 401
 
 
 def test_me_works_after_login(app: FastAPI, engine: Engine) -> None:
-    """/me reads the session cookie and answers with the profile."""
+    """/api/v1/me reads the session cookie and answers with the profile."""
     _create_user(engine, "dave", "correct-horse")
     with TestClient(app) as client:
         client.post("/session", data={"username": "dave", "password": "correct-horse"})
-        response = client.get("/me")
+        response = client.get("/api/v1/me")
     assert response.status_code == 200
     assert response.json()["username"] == "dave"
 
 
 def test_logout_revokes_the_session(app: FastAPI, engine: Engine) -> None:
-    """Logging out kills the session: /me stops working immediately."""
+    """Logging out kills the session: /api/v1/me stops working immediately."""
     _create_user(engine, "erin", "correct-horse")
     with TestClient(app) as client:
         client.post("/session", data={"username": "erin", "password": "correct-horse"})
-        assert client.get("/me").status_code == 200
+        assert client.get("/api/v1/me").status_code == 200
         # Fetch a page so the CSRF cookie exists, then log out with the header.
         client.get("/healthz")
         csrf = client.cookies.get("wadjet_csrf")
         response = client.post("/session/logout", headers={"X-CSRF-Token": csrf})
         assert response.status_code == 200
-        assert client.get("/me").status_code == 401
+        assert client.get("/api/v1/me").status_code == 401
 
 
 def test_me_accepts_bearer_session_token(app: FastAPI, engine: Engine) -> None:
@@ -111,7 +111,7 @@ def test_me_accepts_bearer_session_token(app: FastAPI, engine: Engine) -> None:
         response = client.post("/session", data={"username": "frank", "password": "correct-horse"})
         token = response.cookies.get("wadjet_session")
         client.cookies.clear()
-        me = client.get("/me", headers={"Authorization": f"Bearer {token}"})
+        me = client.get("/api/v1/me", headers={"Authorization": f"Bearer {token}"})
     assert me.status_code == 200
     assert me.json()["username"] == "frank"
 

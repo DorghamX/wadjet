@@ -27,7 +27,7 @@ try{var t=localStorage.getItem("wadjet-theme");if(t==="dark"||t==="light"){docum
     {% if user.is_admin %}<a href="/admin"{% if nav == "admin" %} class="on" aria-current="page"{% endif %}>Admin</a>{% endif %}
   </nav>
   <div class="end">
-    <span class="m mu">{{ user.display_name or user.username }}</span>
+    <a class="m mu" href="/me">{{ user.display_name or user.username }}</a>
     <button class="b" id="theme-toggle" type="button" aria-label="Switch between light and dark theme">Theme</button>
     <form method="post" action="/session/logout">
       <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">

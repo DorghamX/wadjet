@@ -42,6 +42,7 @@ from app.web.gates import router as gates_pages_router  # T4.6
 from app.web.inbox import router as inbox_pages_router
 from app.web.issue_detail import router as issue_detail_router
 from app.web.issues import router as issue_pages_router
+from app.web.me import router as me_pages_router  # T4.9
 from app.web.projects import router as project_pages_router
 from app.web.requests import router as action_requests_router
 from app.web.routes import (
@@ -145,6 +146,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.include_router(settings_pages_router)  # T4.5
     application.include_router(gates_pages_router)  # T4.6
     application.include_router(admin_pages_router)  # T4.7
+    application.include_router(me_pages_router)  # T4.9
 
     @application.post("/session", status_code=201)
     def login(
@@ -275,9 +277,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         response.delete_cookie("wadjet_session")
         return {"detail": "logged out"}
 
-    @application.get("/me", response_model=dict)
+    @application.get("/api/v1/me", response_model=dict)
     def me(current: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
-        """Return the current authenticated user's info."""
+        """Return the current authenticated user's info.
+
+        Lives under ``/api/v1`` so the HTML profile page can own ``/me``
+        (section 14); the JSON endpoints for the profile stay together.
+        """
         engine = application.state.engine
         with engine.begin() as conn:
             result = conn.execute(
