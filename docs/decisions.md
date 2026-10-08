@@ -908,3 +908,24 @@ Format: date, task, decision, reason.
 - **Reaching the page.** The design's top bar is Projects, Gates, Inbox,
   Admin - no profile item - so the signed-in user's name in the header
   links to `/me` instead of being plain text.
+
+## 2026-10-08 (T6.4 hardening review)
+
+- **POST /admin/create-admin: dropped, CLI only.** `create-admin` must be
+  run as the single operator who owns the first admin, and the web route
+  only asked for *any* session while the CLI refuses to run once an admin
+  exists. The JSON endpoint duplicated that bootstrap and, with its
+  missing `users.admin` guard, could be exercised by anyone who already
+  had a session. `wadjet-server create-admin` keeps the authoritative
+  behavior (existence check, hashed password, one-time success). The
+  route is removed from `server/app/main.py`; the name lives on under
+  `wadjet-server` (section 15.3.8).
+- **Badge SVG: stays as a migration placeholder.** `GET
+  /api/v1/badges/{project_key}/gate.svg` is currently only reachable by
+  an authenticated session and renders the built-in default gate alone —
+  not the public, project-specific, embeddable badge section 14's T5.5
+  design promises. It cannot become that until the `badge_token` column
+  lands (frozen `schema/` - only Track B may migrate): the token is
+  created once, shown once, stored in project settings, and compared
+  constant-time. Until then it stays a placeholder, and this is logged so
+  no one mistakes it for the final endpoint.

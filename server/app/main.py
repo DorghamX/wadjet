@@ -77,14 +77,6 @@ class MePassword(BaseModel):
     new_password: str
 
 
-class AdminCreate(BaseModel):
-    """Body of ``POST /admin/create-admin``: the first admin's credentials."""
-
-    username: str
-    email: str
-    password: str
-
-
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Build the Wadjet application.
 
@@ -424,38 +416,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         expire_sessions_for_user(engine, int(current["user_id"]))
 
         return {"detail": "Password changed successfully"}
-
-    @application.post("/admin/create-admin")
-    def create_admin_endpoint(
-        payload: AdminCreate,
-        current: dict[str, Any] = Depends(get_current_user),
-    ) -> dict[str, Any]:
-        """Create the first admin user (run once after database setup)."""
-        if len(payload.password) < MIN_PASSWORD_LENGTH:
-            raise HTTPException(
-                status_code=422,
-                detail=f"Passwords need at least {MIN_PASSWORD_LENGTH} characters.",
-            )
-        engine = application.state.engine
-        # Check if any admin already exists
-        with engine.begin() as conn:
-            result = conn.execute(text("SELECT COUNT(*) FROM users WHERE is_admin = TRUE")).scalar()
-        if result and result > 0:
-            raise HTTPException(status_code=400, detail="Admin user already exists")
-
-        # Create the first admin
-        hashed = hash_password(payload.password)
-        with engine.begin() as conn:
-            conn.execute(
-                text(
-                    "INSERT INTO users (username, email, password_hash, is_admin, is_active, "
-                    "created_at, updated_at) "
-                    "VALUES (:username, :email, :password_hash, TRUE, TRUE, NOW(), NOW())"
-                ),
-                {"username": payload.username, "email": payload.email, "password_hash": hashed},
-            )
-
-        return {"detail": f"Admin user {payload.username} created"}
 
     # --- Health check ---
 
