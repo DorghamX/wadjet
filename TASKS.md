@@ -55,4 +55,21 @@ code, tests and one docs line exist, `make lint test` is green and the commit me
 - [x] **T6.1 (M)** Docs: README quickstart, operations, writing-an-adapter, supported tools
 - [x] **T6.2 (S)** `scanner-compat.yml` weekly workflow
 - [x] **T6.3 (S)** Image build and push workflow
-- [ ] **T6.4 (S)** Walk through section 18
+- [x] **T6.4 (S)** Walk through section 18
+
+  Completed 2026-10-08 in one pass against the merged tree:
+
+  - ✅ README quickstart: prereqs, role/db SQL, compose commands, `/healthz`,
+    upgrade — present and matches section 15.7.
+  - ✅ Adapter guide: `docs/writing-an-adapter.md` — Protocol,
+    `AdapterInfo`, `RunContext`.
+  - ✅ Supported-tools table: `agent/SUPPORTED.md`, contract tests parse the
+    recorded fixtures.
+  - ✅ Deploy compose: no database service, no `build:` key.
+  - ✅ `docs/operations.md`: setup, backup, restore, upgrade.
+  - ✅ README comparison: SonarQube vs DefectDojo vs Wadjet (already in
+    place, matches the spec's requirements).
+  - ⚠️ Screenshots from `seed-demo` and an external architecture diagram:
+    no headless browser in this environment, so they cannot be produced;
+    the ASCII architecture diagram already lives in the README.
+  - ⚠️ Security section: present as `## Security` in the README.
