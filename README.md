@@ -1,6 +1,6 @@
 # Wadjet
 
-<img width="1254" height="1254" alt="Modern Wadjet Eye Logo" src="https://github.com/user-attachments/assets/2141cf89-dd07-4a5e-a922-121dc748bda4" />
+<img width="1254" height="900" alt="Modern Wadjet Eye Logo" src="https://github.com/user-attachments/assets/2141cf89-dd07-4a5e-a922-121dc748bda4" />
 
 
 > **A security-first quality gate aggregator.** Runs maintained open-source scanners, normalizes their findings, stores them as triageable issues, evaluates a quality gate, and returns pass/fail. People triage issues in a web dashboard.
