@@ -1,0 +1,21 @@
+# Fallback entry for rules the knowledge base does not know (section 6).
+# description is intentionally left empty: the scanner's own message fills it
+# in, so the user still sees what the tool reported. impact and fix are the
+# generic guidance that applies to any undocumented rule.
+
+default:
+  title: Scanner finding
+  description: ""
+  impact: >
+    The scanner judged this code unsafe but the knowledge base has no entry
+    for this rule yet, so there is no tailored guidance: treat the flagged
+    line as suspect, check it against the tool's documentation, and fix it
+    or record a reasoned flag during triage.
+  fix: >
+    Read the rule in the scanner's own documentation, decide whether the
+    flagged code is reachable with attacker-controlled input, and either fix
+    it or flag it (false positive, accepted risk, wont fix) with a reason on
+    the issue.
+  references:
+    - https://bandit.readthedocs.io/en/latest/
+  cwe: null

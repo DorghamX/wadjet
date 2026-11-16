@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Quality gates - Wadjet{% endblock %}
+{% block content %}
+<div class="listhead">
+  <h1>{{ gates|length }} quality gate{{ "s" if gates|length != 1 else "" }}</h1>
+</div>
+<p class="mu">Conditions read &#34;fail when&#34;. There is no new code setting: the gate always looks at the whole project.</p>
+
+{% if notice %}<p class="formnote ok">{{ notice }}</p>{% endif %}
+{% if error %}<p class="formnote bad" role="alert">{{ error }}</p>{% endif %}
+
+{% if gates %}
+<div class="tablewrap">
+<table class="t">
+  <tr>
+    <th scope="col">Gate</th>
+    <th scope="col">Conditions</th>
+    <th scope="col">Used by</th>
+  </tr>
+  {% for gate in gates %}
+  <tr>
+    <td>
+      <a href="/gates/{{ gate.id }}"><b>{{ gate.name }}</b></a><br>
+      <span class="m">/gates/{{ gate.id }}</span>
+      {% if gate.is_default %} <span class="c nt">Built-in default</span>{% endif %}
+    </td>
+    <td>{{ gate.conditions }}</td>
+    <td>{{ gate.used_by }} project{{ "s" if gate.used_by != 1 else "" }}</td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+{% else %}
+<div class="k">
+  <h3>No gates yet</h3>
+  <p class="mu">Create a gate, add its &#34;fail when&#34; conditions, then pick it from a project's settings.</p>
+</div>
+{% endif %}
+
+{% if can_edit %}
+<div class="k" style="margin-top:14px">
+  <h3>New gate</h3>
+  <form method="post" action="/gates">
+    <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+    <div class="gr">
+      <label for="g-name">Name</label>
+      <input class="f" id="g-name" name="name" maxlength="255" placeholder="Release gate">
+      <button class="b p" type="submit">Create gate</button>
+    </div>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

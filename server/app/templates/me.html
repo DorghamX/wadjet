@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Your profile - Wadjet{% endblock %}
+{% block content %}
+<div class="win">
+  <h1 class="t">Your profile</h1>
+
+  {% if message %}<p class="m">{{ message }}</p>{% endif %}
+
+  <h2 class="t">Details</h2>
+  <form method="post" action="/me" class="f">
+    <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+    <div class="k">
+      <label class="t" for="username">Username</label>
+      <input class="f" id="username" name="username" value="{{ user.username }}" disabled>
+    </div>
+    <div class="k">
+      <label class="t" for="email">Email</label>
+      <input class="f" id="email" name="email" value="{{ email }}" disabled>
+    </div>
+    <div class="k">
+      <label class="t" for="display_name">Display name</label>
+      <input class="f" id="display_name" name="display_name" maxlength="255"
+             value="{{ user.display_name or '' }}">
+    </div>
+    <button class="b" type="submit">Save details</button>
+  </form>
+
+  <h2 class="t">Change password</h2>
+  <form method="post" action="/me/password" class="f">
+    <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+    <div class="k">
+      <label class="t" for="current_password">Current password</label>
+      <input class="f" id="current_password" name="current_password" type="password">
+    </div>
+    <div class="k">
+      <label class="t" for="new_password">New password</label>
+      <input class="f" id="new_password" name="new_password" type="password">
+    </div>
+    <p class="m mu">At least 8 characters. Changing your password signs you out everywhere.</p>
+    <button class="b" type="submit">Change password</button>
+  </form>
+</div>
+{% endblock %}

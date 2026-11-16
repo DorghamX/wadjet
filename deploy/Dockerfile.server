@@ -1,0 +1,22 @@
+# Wadjet server image. Build from the repository root:
+#   docker build -f deploy/Dockerfile.server -t ghcr.io/OWNER/wadjet-server:0.1.0 .
+
+FROM python:3.12-slim AS build
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_NO_CACHE_DIR=1
+WORKDIR /src
+COPY schema/ schema/
+COPY server/ server/
+RUN python -m pip install ./schema ./server
+
+FROM python:3.12-slim
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    WADJET_LOG_LEVEL=info
+RUN useradd --uid 10001 --create-home --shell /usr/sbin/nologin wadjet
+COPY --from=build /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=build /usr/local/bin/wadjet-server /usr/local/bin/wadjet-server
+USER 10001
+EXPOSE 8080
+HEALTHCHECK --interval=15s --timeout=5s --start-period=40s --retries=5 \
+    CMD wadjet-server healthcheck
+ENTRYPOINT ["wadjet-server", "serve"]

@@ -1,0 +1,57 @@
+{% extends "settings_shell.html" %}
+{% block settings %}
+<p class="mu">Each flag is its own permission, granted to a user or a group. Effective
+  permissions are the union of what somebody holds directly and what their groups hold.</p>
+
+<div class="tablewrap">
+<table class="t members">
+  <tr>
+    <th scope="col">Who</th>
+    {% for column in columns %}<th scope="col">{{ column.label }}</th>{% endfor %}
+    <th scope="col"><span class="vh">Actions</span></th>
+  </tr>
+  {% for row in members %}
+  <tr>
+    <td><b>{{ row.name }}</b><br><span class="mu">{{ row.subtitle }}</span></td>
+    {% for cell in row.cells %}
+    <td{% if not cell.yes %} class="mu"{% endif %}>{% if cell.yes %}Yes{% else %}No{% endif %}</td>
+    {% endfor %}
+    <td>
+      <form method="post" action="/projects/{{ project.key }}/settings/members/remove">
+        <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+        <input type="hidden" name="subject" value="{{ row.subject_type }}:{{ row.subject_id }}">
+        <button class="b" type="submit">Remove</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+{% if not members %}
+<p class="mu">No members yet. Admins can always see this project; everyone else needs a grant
+  here.</p>
+{% endif %}
+
+<div class="k" style="margin-top:14px">
+  <h3>Add user or group</h3>
+  <form method="post" action="/projects/{{ project.key }}/settings/members">
+    <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+    <div class="gr">
+      <label for="mb-who">Who</label>
+      <select class="f" id="mb-who" name="subject">
+        <optgroup label="Users">
+          {% for person in choices.users %}<option value="{{ person.value }}">{{ person.label }} ({{ person.hint }})</option>{% endfor %}
+        </optgroup>
+        <optgroup label="Groups">
+          {% for group in choices.groups %}<option value="{{ group.value }}">{{ group.label }}</option>{% endfor %}
+        </optgroup>
+      </select>
+      <label for="mb-template">Permissions</label>
+      <select class="f" id="mb-template" name="template">
+        {% for template in templates %}<option value="{{ template.value }}">{{ template.label }} - {{ template.hint }}</option>{% endfor %}
+      </select>
+      <button class="b p" type="submit">Add user or group</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,19 @@
+# Wadjet agent image. Build from the repository root:
+#   docker build -f deploy/Dockerfile.agent -t ghcr.io/OWNER/wadjet-agent:0.1.0 .
+
+FROM python:3.12-slim AS build
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_NO_CACHE_DIR=1
+WORKDIR /src
+COPY schema/ schema/
+COPY agent/ agent/
+RUN python -m pip install ./schema "./agent[scanners]"
+
+FROM python:3.12-slim
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+RUN useradd --uid 10001 --create-home --shell /usr/sbin/nologin wadjet
+COPY --from=build /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=build /usr/local/bin/wadjet /usr/local/bin/wadjet
+USER 10001
+WORKDIR /work
+ENTRYPOINT ["wadjet"]

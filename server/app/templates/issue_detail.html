@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}{{ issue.title }} - Issue #{{ issue.id }} - Wadjet{% endblock %}
+{% block content %}
+<div class="pagehead">
+  <h1>Issue #{{ issue.id }}</h1>
+  <a class="m mu" href="/projects/{{ project.key }}/issues">All issues</a>
+  <a class="m mu" href="/projects/{{ project.key }}">{{ project.name }}</a>
+</div>
+{# The action routes answer with this region's body (htmx) or with this whole #}
+{# page (no JavaScript), so everything a post can change lives inside it.    #}
+<div id="issue-detail">
+{% include "issue_detail_body.html" %}
+</div>
+{% endblock %}

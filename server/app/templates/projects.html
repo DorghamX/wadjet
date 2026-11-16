@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Projects - Wadjet{% endblock %}
+{% block content %}
+<div class="listhead">
+  <h1>{{ projects|length }} project{{ "s" if projects|length != 1 else "" }}</h1>
+  {% if user.is_admin %}<a class="b p" href="/projects/new">New project</a>{% endif %}
+</div>
+{% if projects %}
+<div class="tablewrap">
+<table class="t">
+  <tr>
+    <th scope="col">Project</th>
+    <th scope="col">Quality gate</th>
+    <th scope="col">Blocker</th>
+    <th scope="col">Critical</th>
+    <th scope="col">High</th>
+    <th scope="col">Coverage</th>
+    <th scope="col">Last analysis</th>
+  </tr>
+  {% for p in projects %}
+  <tr>
+    <td>
+      <a href="/projects/{{ p.key }}"><b>{{ p.name }}</b></a><br>
+      <span class="m">{{ p.key }}</span>{% if p.description %} <span class="mu">&middot; {{ p.description }}</span>{% endif %}
+    </td>
+    <td><span class="c {{ p.gate_chip }}">{{ p.gate_label }}</span></td>
+    <td>{{ p.blocker }}</td>
+    <td>{{ p.critical }}</td>
+    <td>{{ p.high }}</td>
+    <td>{{ p.coverage }}</td>
+    <td>{% if p.analysis_id %}#{{ p.analysis_id }}, {{ p.analysis_at|timeago }}{% else %}<span class="mu">No analysis yet</span>{% endif %}</td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+{% else %}
+<div class="k">
+  <h3>No projects yet</h3>
+  <p class="mu">Create a project, give it a token, and run <span class="m">wadjet scan</span> in CI - the first analysis shows up here.</p>
+  {% if user.is_admin %}<a class="b p" href="/projects/new">New project</a>{% endif %}
+</div>
+{% endif %}
+{% endblock %}

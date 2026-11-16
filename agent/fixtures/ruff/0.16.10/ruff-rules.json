@@ -1,0 +1,119 @@
+{
+  "B006": {
+    "name": "mutable-argument-default",
+    "code": "B006",
+    "linter": "flake8-bugbear",
+    "summary": "Do not use mutable data structures for argument defaults",
+    "message_formats": [
+      "Do not use mutable data structures for argument defaults"
+    ],
+    "fix": "Fix is sometimes available.",
+    "fix_availability": "Sometimes",
+    "explanation": "## What it does\nChecks for uses of mutable objects as function argument defaults.\n\n## Why is this bad?\nFunction defaults are evaluated once, when the function is defined.\n\nThe same mutable object is then shared across all calls to the function.\nIf the object is modified, those modifications will persist across calls,\nwhich can lead to unexpected behavior.\n\nInstead, prefer to use immutable data structures, or take `None` as a\ndefault, and initialize a new mutable object inside the function body\nfor each call.\n\nArguments with immutable type annotations will be ignored by this rule.\nTypes outside of the standard library can be marked as immutable with the\n[`lint.flake8-bugbear.extend-immutable-calls`] configuration option.\n\n## Known problems\nMutable argument defaults can be used intentionally to cache computation\nresults. Replacing the default with `None` or an immutable data structure\ndoes not work for such usages. Instead, prefer the `@functools.lru_cache`\ndecorator from the standard library.\n\n## Example\n```python\ndef add_to_list(item, some_list=[]):\n    some_list.append(item)\n    return some_list\n\n\nl1 = add_to_list(0)  # [0]\nl2 = add_to_list(1)  # [0, 1]\n```\n\nUse instead:\n```python\ndef add_to_list(item, some_list=None):\n    if some_list is None:\n        some_list = []\n    some_list.append(item)\n    return some_list\n\n\nl1 = add_to_list(0)  # [0]\nl2 = add_to_list(1)  # [1]\n```\n\n## Options\n- `lint.flake8-bugbear.extend-immutable-calls`\n\n## Fix safety\n\nThis fix is marked as unsafe because it replaces the mutable default with `None`\nand initializes it in the function body, which may not be what the user intended,\nas described above.\n\n## References\n- [Python documentation: Default Argument Values](https://docs.python.org/3/tutorial/controlflow.html#default-argument-values)\n",
+    "preview": false,
+    "status": {
+      "Stable": {
+        "since": "v0.0.92"
+      }
+    },
+    "category": "suspicious",
+    "source_location": {
+      "file": "crates/ruff_linter/src/rules/flake8_bugbear/rules/mutable_argument_default.rs",
+      "line": 82
+    }
+  },
+  "C901": {
+    "name": "complex-structure",
+    "code": "C901",
+    "linter": "mccabe",
+    "summary": "`{name}` is too complex ({complexity} > {max_complexity})",
+    "message_formats": [
+      "`{name}` is too complex ({complexity} > {max_complexity})"
+    ],
+    "fix": "Fix is not available.",
+    "fix_availability": "None",
+    "explanation": "## What it does\nChecks for functions with a high `McCabe` complexity.\n\n## Why is this bad?\nThe `McCabe` complexity of a function is a measure of the complexity of\nthe control flow graph of the function. It is calculated by adding\none to the number of decision points in the function. A decision\npoint is a place in the code where the program has a choice of two\nor more paths to follow.\n\nFunctions with a high complexity are hard to understand and maintain.\n\n## Example\n```python\ndef normalize_status(status):\n    if status == \"new\":\n        return \"queued\"\n    if status == \"queued\":\n        return \"running\"\n    if status == \"running\":\n        return \"done\"\n    if status == \"failed\":\n        return \"retry\"\n    if status == \"cancelled\":\n        return \"closed\"\n    return \"unknown\"\n```\n\nUse instead:\n\n```python\nSTATUS_TRANSITIONS = {\n    \"new\": \"queued\",\n    \"queued\": \"running\",\n    \"running\": \"done\",\n    \"failed\": \"retry\",\n    \"cancelled\": \"closed\",\n}\n\n\ndef normalize_status(status):\n    return STATUS_TRANSITIONS.get(status, \"unknown\")\n```\n\nNote that this example assumes a `lint.mccabe.max-complexity` of 5 or less to trigger a\ndiagnostic because the initial code only has a complexity of 6.\n\n## Options\n- `lint.mccabe.max-complexity`\n",
+    "preview": false,
+    "status": {
+      "Stable": {
+        "since": "v0.0.127"
+      }
+    },
+    "category": "restriction",
+    "source_location": {
+      "file": "crates/ruff_linter/src/rules/mccabe/rules/function_is_too_complex.rs",
+      "line": 59
+    }
+  },
+  "F401": {
+    "name": "unused-import",
+    "code": "F401",
+    "linter": "Pyflakes",
+    "summary": "`{name}` imported but unused; consider using `importlib.util.find_spec` to test for availability",
+    "message_formats": [
+      "`{name}` imported but unused; consider using `importlib.util.find_spec` to test for availability",
+      "`{name}` imported but unused; consider removing, adding to `__all__`, or using a redundant alias",
+      "`{name}` imported but unused"
+    ],
+    "fix": "Fix is sometimes available.",
+    "fix_availability": "Sometimes",
+    "explanation": "## What it does\nChecks for unused imports.\n\n## Why is this bad?\nUnused imports add a performance overhead at runtime, and risk creating\nimport cycles. They also increase the cognitive load of reading the code.\n\nIf an import statement is used to check for the availability or existence\nof a module, consider using `importlib.util.find_spec` instead.\n\nIf an import statement is used to re-export a symbol as part of a module's\npublic interface, consider using a \"redundant\" import alias, which\ninstructs Ruff (and other tools) to respect the re-export, and avoid\nmarking it as unused, as in:\n\n```python\nfrom module import member as member\n```\n\nAlternatively, you can use `__all__` to declare a symbol as part of the module's\ninterface, as in:\n\n```python\n# __init__.py\nimport some_module\n\n__all__ = [\"some_module\"]\n```\n\n## Preview\nWhen [preview] is enabled (and certain simplifying assumptions\nare met), we analyze all import statements for a given module\nwhen determining whether an import is used, rather than simply\nthe last of these statements. This can result in both different and\nmore import statements being marked as unused.\n\nFor example, if a module consists of\n\n```python\nimport a\nimport a.b\n```\n\nthen both statements are marked as unused under [preview], whereas\nonly the second is marked as unused under stable behavior.\n\nAs another example, if a module consists of\n\n```python\nimport a.b\nimport a\n\na.b.foo()\n```\n\nthen a diagnostic will be emitted for the second line under [preview],\nwhereas no diagnostic is emitted under stable behavior.\n\nNote that this behavior is somewhat subjective and is designed\nto conform to the developer's intuition rather than Python's actual\nexecution. To wit, the statement `import a.b` automatically executes\n`import a`, so in some sense `import a` is _always_ redundant\nin the presence of `import a.b`.\n\n\n## Fix safety\n\nFixes to remove unused imports are safe, except in `__init__.py` files.\n\nApplying fixes to `__init__.py` files is currently in preview. The fix offered depends on the\ntype of the unused import. Ruff will suggest a safe fix to export first-party imports with\neither a redundant alias or, if already present in the file, an `__all__` entry. If multiple\n`__all__` declarations are present, Ruff will not offer a fix. Ruff will suggest an unsafe fix\nto remove third-party and standard library imports -- the fix is unsafe because the module's\ninterface changes.\n\nSee [this FAQ section](https://docs.astral.sh/ruff/faq/#how-does-ruff-determine-which-of-my-imports-are-first-party-third-party-etc)\nfor more details on how Ruff\ndetermines whether an import is first or third-party.\n\n## Example\n\n```python\nimport numpy as np  # unused import\n\n\ndef area(radius):\n    return 3.14 * radius**2\n```\n\nUse instead:\n\n```python\ndef area(radius):\n    return 3.14 * radius**2\n```\n\nTo check the availability of a module, use `importlib.util.find_spec`:\n\n```python\nfrom importlib.util import find_spec\n\nif find_spec(\"numpy\") is not None:\n    print(\"numpy is installed\")\nelse:\n    print(\"numpy is not installed\")\n```\n\n## Options\n- `lint.ignore-init-module-imports`\n- `lint.pyflakes.allowed-unused-imports`\n\n## References\n- [Python documentation: `import`](https://docs.python.org/3/reference/simple_stmts.html#the-import-statement)\n- [Python documentation: `importlib.util.find_spec`](https://docs.python.org/3/library/importlib.html#importlib.util.find_spec)\n- [Typing documentation: interface conventions](https://typing.python.org/en/latest/spec/distributing.html#library-interface-public-and-private-symbols)\n\n[preview]: https://docs.astral.sh/ruff/preview/\n",
+    "preview": false,
+    "status": {
+      "Stable": {
+        "since": "v0.0.18"
+      }
+    },
+    "category": "suspicious",
+    "source_location": {
+      "file": "crates/ruff_linter/src/rules/pyflakes/rules/unused_import.rs",
+      "line": 145
+    }
+  },
+  "F841": {
+    "name": "unused-variable",
+    "code": "F841",
+    "linter": "Pyflakes",
+    "summary": "Local variable `{name}` is assigned to but never used",
+    "message_formats": [
+      "Local variable `{name}` is assigned to but never used"
+    ],
+    "fix": "Fix is sometimes available.",
+    "fix_availability": "Sometimes",
+    "explanation": "## What it does\nChecks for the presence of unused variables in function scopes.\n\n## Why is this bad?\nA variable that is defined but not used is likely a mistake, and should\nbe removed to avoid confusion.\n\nIf a variable is intentionally defined-but-not-used, it should be\nprefixed with an underscore, or some other value that adheres to the\n[`lint.dummy-variable-rgx`] pattern.\n\n## Example\n```python\ndef foo():\n    x = 1\n    y = 2\n    return x\n```\n\nUse instead:\n```python\ndef foo():\n    x = 1\n    return x\n```\n\n## Fix safety\n\nThis rule's fix is marked as unsafe because removing an unused variable assignment may\ndelete comments that are attached to the assignment.\n\n## See also\n\nThis rule does not apply to bindings in unpacked assignments (e.g. `x, y = 1, 2`). See\n[`unused-unpacked-variable`][RUF059] for this case.\n\n## Options\n- `lint.dummy-variable-rgx`\n\n[RUF059]: https://docs.astral.sh/ruff/rules/unused-unpacked-variable/\n",
+    "preview": false,
+    "status": {
+      "Stable": {
+        "since": "v0.0.22"
+      }
+    },
+    "category": "correctness",
+    "source_location": {
+      "file": "crates/ruff_linter/src/rules/pyflakes/rules/unused_variable.rs",
+      "line": 56
+    }
+  },
+  "PLE1307": {
+    "name": "bad-string-format-type",
+    "code": "PLE1307",
+    "linter": "Pylint",
+    "summary": "Format type does not match argument type",
+    "message_formats": [
+      "Format type does not match argument type"
+    ],
+    "fix": "Fix is not available.",
+    "fix_availability": "None",
+    "explanation": "## What it does\nChecks for mismatched argument types in \"old-style\" format strings.\n\n## Why is this bad?\nThe format string is not checked at compile time, so it is easy to\nintroduce bugs by mistyping the format string.\n\n## Example\n```python\nprint(\"%d\" % \"1\")\n```\n\nUse instead:\n```python\nprint(\"%d\" % 1)\n```\n",
+    "preview": false,
+    "status": {
+      "Stable": {
+        "since": "v0.0.245"
+      }
+    },
+    "category": "correctness",
+    "source_location": {
+      "file": "crates/ruff_linter/src/rules/pylint/rules/bad_string_format_type.rs",
+      "line": 31
+    }
+  }
+}

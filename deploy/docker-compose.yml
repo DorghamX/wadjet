@@ -1,0 +1,14 @@
+services:
+  wadjet:
+    image: ghcr.io/OWNER/wadjet-server:0.1.0
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "wadjet-server", "healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s

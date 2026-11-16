@@ -1,0 +1,65 @@
+{% extends "settings_shell.html" %}
+{% block settings %}
+<p class="mu">A token authenticates the agent for this project and nothing else. It is shown
+  once, stored as a hash, and can be revoked here at any time.</p>
+
+{% if new_token %}
+<div class="ban ok">
+  <b>Token created</b> Copy it now - the value is not shown again.
+  <div class="code"><div>{{ new_token.value }}</div></div>
+</div>
+{% endif %}
+
+<div class="k">
+  <h3>New token</h3>
+  <form method="post" action="/projects/{{ project.key }}/settings/tokens">
+    <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+    <label for="tk-name">Name</label>
+    <input class="f" id="tk-name" name="name" value="{{ form.name if form else '' }}" required maxlength="255" placeholder="Nightly CI">
+    <label for="tk-expires">Expires (optional)</label>
+    <input class="f" id="tk-expires" name="expires" type="date" value="{{ form.expires if form else '' }}">
+    <button class="b p" type="submit">Create token</button>
+  </form>
+</div>
+
+<div class="k" style="margin-top:14px">
+  <h3>Tokens</h3>
+  {% if tokens %}
+  <div class="tablewrap">
+  <table class="t">
+    <tr>
+      <th scope="col">Name</th>
+      <th scope="col">Token</th>
+      <th scope="col">Status</th>
+      <th scope="col">Created</th>
+      <th scope="col">Last used</th>
+      <th scope="col">Expires</th>
+      <th scope="col"><span class="vh">Actions</span></th>
+    </tr>
+    {% for token in tokens %}
+    <tr>
+      <td>{{ token.name }}</td>
+      <td class="m">{{ token.prefix }}&hellip;</td>
+      <td><span class="c {{ token.state_chip }}">{{ token.state_label }}</span></td>
+      <td>{{ token.created }}</td>
+      <td>{{ token.last_used }}</td>
+      <td>{{ token.expires }}</td>
+      <td>
+        {% if not token.revoked %}
+        <form method="post" action="/projects/{{ project.key }}/settings/tokens/revoke">
+          <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+          <input type="hidden" name="token_id" value="{{ token.id }}">
+          <button class="b" type="submit">Revoke</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+  {% else %}
+  <p class="mu">No tokens yet. Create one for your CI so <span class="m">wadjet scan</span>
+    can upload analyses for this project.</p>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,34 @@
+{% extends "admin_shell.html" %}
+{% block admin %}
+<p class="mu">Audit log entries are created automatically on every state change
+  (logins, token changes, permission grants, settings edits, gate changes).
+  Admins can view the recent history here.</p>
+
+<div class="tablewrap">
+<table class="t" style="min-width:960px">
+  <tr>
+    <th scope="col">#</th>
+    <th scope="col">When</th>
+    <th scope="col">Actor</th>
+    <th scope="col">Action</th>
+    <th scope="col">Target type</th>
+    <th scope="col">Target ID</th>
+  </tr>
+  {% for entry in entries %}
+  <tr>
+    <td>{{ entry.id }}</td>
+    <td>{{ entry.created_at|timeago }}</td>
+    <td>{% if entry.actor_id %}{{ entry.actor_id }}{% else %}system{% endif %}</td>
+    <td>{% if entry.action %}{{ entry.action }}{% else %}-{% endif %}</td>
+    <td>{% if entry.target_type %}{{ entry.target_type }}{% else %}-{% endif %}</td>
+    <td>{% if entry.target_id %}{{ entry.target_id }}{% else %}-{% endif %}</td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+
+<p class="mu" style="margin-top:12px">
+  Entries: {{ entries|length }}.
+  <a href="?limit=100">100</a> <a href="?limit=50">50</a> <a href="?limit=20">20</a>
+</p>
+{% endblock %}

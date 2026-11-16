@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}{{ tab_label }} - Admin - Wadjet{% endblock %}
+{% block content %}
+<div class="pagehead">
+  <h1>Admin</h1>
+  <span class="m mu">/admin/{{ tab }}</span>
+</div>
+
+<div class="tabs" role="navigation" aria-label="Admin">
+  {% for item in tabs %}
+  <a href="/admin/{{ item.slug }}"{% if item.on %} class="on" aria-current="page"{% endif %}>{{ item.label }}</a>
+  {% endfor %}
+</div>
+
+{% if notice %}<p class="formnote ok">{{ notice }}</p>{% endif %}
+{% if error %}<p class="formnote bad" role="alert">{{ error }}</p>{% endif %}
+
+{% block admin %}{% endblock %}
+{% endblock %}

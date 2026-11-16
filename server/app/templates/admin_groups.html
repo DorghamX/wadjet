@@ -1,0 +1,94 @@
+{% extends "admin_shell.html" %}
+{% block admin %}
+<p class="mu">A group carries one set of grants to many people: what the group holds, every
+  member holds. Effective permissions are the union of what somebody holds directly and
+  what their groups hold.</p>
+
+<div class="tablewrap">
+<table class="t" style="min-width:940px">
+  <tr>
+    <th scope="col">Group</th>
+    <th scope="col">Members</th>
+    <th scope="col">Add member</th>
+    <th scope="col">Edit</th>
+  </tr>
+  {% for group in groups %}
+  {% set e = form and form.get('group_id') == group.id %}
+  <tr>
+    <td>
+      <b>{{ group.name }}</b><br>
+      <span class="mu">{{ group.description or "No description." }}</span>
+    </td>
+    <td>
+      {% if group.members %}
+      <ul class="ls">
+        {% for member in group.members %}
+        <li>
+          <span>{{ member.label }} <span class="m mu">@{{ member.username }}</span></span>
+          <form method="post" action="/admin/groups/{{ group.id }}/members/remove">
+            <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+            <input type="hidden" name="user_id" value="{{ member.id }}">
+            <button class="b" type="submit">Remove</button>
+          </form>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <span class="mu">No members yet.</span>
+      {% endif %}
+    </td>
+    <td>
+      {% if group.choices %}
+      <form method="post" action="/admin/groups/{{ group.id }}/members">
+        <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+        <label class="vh" for="add-{{ group.id }}">Add a member to {{ group.name }}</label>
+        <select class="f" id="add-{{ group.id }}" name="user_id">
+          {% for choice in group.choices %}
+          <option value="{{ choice.id }}">{{ choice.label }} ({{ choice.hint }})</option>
+          {% endfor %}
+        </select>
+        <button class="b" type="submit">Add</button>
+      </form>
+      {% else %}
+      <span class="mu">Everyone is in this group.</span>
+      {% endif %}
+    </td>
+    <td>
+      <form method="post" action="/admin/groups/{{ group.id }}">
+        <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+        <label for="g{{ group.id }}-name">Name</label>
+        <input class="f" id="g{{ group.id }}-name" name="name" maxlength="128"
+               value="{{ form.name if e else group.name }}">
+        <label for="g{{ group.id }}-desc">Description</label>
+        <input class="f" id="g{{ group.id }}-desc" name="description" maxlength="1000"
+               value="{{ form.description if e else (group.description or '') }}">
+        <button class="b p" type="submit">Save</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+{% if not groups %}
+<div class="k" style="margin-top:14px">
+  <h3>No groups yet</h3>
+  <p class="mu">Create a group, then add the people who should share its permissions.</p>
+</div>
+{% endif %}
+
+<div class="k" style="margin-top:14px">
+  <h3>New group</h3>
+  {% set fresh = form and not form.get('group_id') %}
+  <form method="post" action="/admin/groups">
+    <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+    <label for="ng-name">Name</label>
+    <input class="f" id="ng-name" name="name" maxlength="128" placeholder="Platform team"
+           value="{{ form.name if fresh else '' }}">
+    <label for="ng-desc">Description</label>
+    <input class="f" id="ng-desc" name="description" maxlength="1000"
+           placeholder="Engineers who ship the demo services."
+           value="{{ form.description if fresh else '' }}">
+    <button class="b p" type="submit">Create group</button>
+  </form>
+</div>
+{% endblock %}

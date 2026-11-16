@@ -1,0 +1,24 @@
+{% extends "settings_shell.html" %}
+{% block settings %}
+<p class="mu">A project uses exactly one gate. Conditions read "fail when" and always look at
+  the whole project - there is no new-code setting.</p>
+
+<form method="post" action="/projects/{{ project.key }}/settings/gate">
+  <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+  {% for gate in gates %}
+  <div class="k" style="margin-top:10px">
+    <label class="check">
+      <input type="radio" name="gate_id" value="{{ gate.id }}"{% if gate.on %} checked{% endif %}>
+      <b>{{ gate.name }}</b>
+    </label>
+    {% if gate.is_default %}<span class="c nt">Built-in default</span>{% endif %}
+    <p class="mu">Used by {{ gate.used_by }} project{% if gate.used_by != 1 %}s{% endif %}.
+      Applies to all code in scope on every analysis.</p>
+    <ul class="ls">
+      {% for sentence in gate.conditions %}<li>{{ sentence }}</li>{% endfor %}
+    </ul>
+  </div>
+  {% endfor %}
+  <p style="margin-top:12px"><button class="b p" type="submit">Save gate</button></p>
+</form>
+{% endblock %}

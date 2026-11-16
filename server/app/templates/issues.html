@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Issues - {{ project.name }} - Wadjet{% endblock %}
+{% block content %}
+<div class="pagehead">
+  <h1>Issues</h1>
+  <a class="m mu" href="/projects/{{ project.key }}">{{ project.name }}</a>
+</div>
+{# The form carries filter state as hidden fields; each control below picks its #}
+{# own target so typing never re-renders the input (htmx, no inline script).   #}
+<form id="issue-search" method="get" action="/projects/{{ project.key }}/issues"
+      hx-get="/projects/{{ project.key }}/issues" hx-target="#issues-body" hx-push-url="true">
+{% include "issues_body.html" %}
+</form>
+{# Its own form, so the search form above stays a GET: the checkboxes, the #}
+{# status select and the reason field point here with the form attribute,   #}
+{# which is legal from inside any element - no nested forms, and a plain    #}
+{# browser post works with JavaScript off.                                  #}
+<form id="bulk-form" method="post" action="/projects/{{ project.key }}/issues/bulk">
+  <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+  {% for name, value in filters.params().items() %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+</form>
+{% endblock %}
